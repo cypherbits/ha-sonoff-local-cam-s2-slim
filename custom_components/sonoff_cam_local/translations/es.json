@@ -2,6 +2,9 @@
   "config": {
     "step": {
       "user": {
+        "title": "Añadir un SONOFF CAM-S2"
+      },
+      "manual": {
         "title": "Conectar con un SONOFF CAM-S2",
         "description": "Introduce la dirección IP de la cámara y su contraseña de administrador local (la que se usa para entrar en la consola web de la propia cámara).",
         "data": {
@@ -13,6 +16,13 @@
           "host": "Dirección IP o nombre de host de la cámara.",
           "port": "Puerto del servicio WebSocket JSON-RPC (por defecto 80).",
           "password": "Déjalo vacío solo si la cámara no tiene contraseña de acceso configurada."
+        }
+      },
+      "scan": {
+        "title": "Cámaras encontradas en tu red",
+        "description": "Elige una cámara y, si necesita una, introduce su contraseña de administrador local en la pantalla siguiente.",
+        "data": {
+          "host": "Cámara"
         }
       },
       "reconfigure": {
@@ -47,13 +57,15 @@
       "cannot_connect": "No se pudo conectar con la cámara. Comprueba la dirección y que la cámara esté encendida.",
       "invalid_auth": "Contraseña incorrecta. Aquí no se acepta la contraseña de RTSP; usa la contraseña de administrador local de la cámara.",
       "password_required": "Esta cámara requiere la contraseña de administrador local.",
+      "no_cameras": "No se ha encontrado ninguna cámara SONOFF en tu red. Comprueba que la cámara esté encendida y en la misma red local, y vuelve a intentarlo.",
       "unknown": "Error inesperado al comunicarse con la cámara."
     },
     "abort": {
       "already_configured": "Esta cámara ya está configurada.",
       "reauth_successful": "La reautenticación se ha completado correctamente.",
       "reconfigure_successful": "La reconfiguración se ha completado correctamente.",
-      "cannot_connect": "No se pudo conectar con la cámara."
+      "cannot_connect": "No se pudo conectar con la cámara.",
+      "not_sonoff": "El dispositivo detectado no es una cámara SONOFF."
     }
   },
   "options": {
@@ -71,6 +83,32 @@
       }
     }
   },
+  "services": {
+    "set_wifi": {
+      "name": "Configurar Wi-Fi",
+      "description": "Conecta la cámara a una nueva red Wi-Fi. Si las credenciales son incorrectas, la cámara dejará de ser accesible por Wi-Fi.",
+      "fields": {
+        "device_id": {
+          "name": "Dispositivo",
+          "description": "La cámara que se va a reconfigurar."
+        },
+        "ssid": {
+          "name": "SSID",
+          "description": "SSID de la red a la que conectarse."
+        },
+        "password": {
+          "name": "Contraseña",
+          "description": "Contraseña de la red a la que conectarse."
+        }
+      }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "motion_detected": "{entity_name} ha detectado movimiento",
+      "person_detected": "{entity_name} ha detectado una persona"
+    }
+  },
   "entity": {
     "binary_sensor": {
       "motion": { "name": "Movimiento" },
@@ -80,8 +118,12 @@
       "motion_detection": { "name": "Detección de movimiento" },
       "person_detection": { "name": "Detección de personas" },
       "detect_all_motion": { "name": "Detectar todo movimiento" },
+      "motion_schedule": { "name": "Horario de movimiento" },
+      "alarm_armed": { "name": "Alarma armada" },
+      "alarm_on_motion": { "name": "Alarma con movimiento" },
+      "alarm_on_person": { "name": "Alarma con personas" },
+      "alarm_schedule": { "name": "Horario de la alarma" },
       "status_led": { "name": "LED de estado" },
-      "night_vision": { "name": "Visión nocturna" },
       "watermark": { "name": "Marca de agua en pantalla" },
       "screen_flip": { "name": "Voltear imagen" },
       "onvif": { "name": "ONVIF" },
@@ -91,17 +133,62 @@
     "number": {
       "motion_sensitivity": { "name": "Sensibilidad de movimiento" },
       "speaker_volume": { "name": "Volumen del altavoz" },
-      "microphone_volume": { "name": "Volumen del micrófono" }
+      "microphone_volume": { "name": "Volumen del micrófono" },
+      "alarm_duration": { "name": "Duración de la alarma" }
     },
     "sensor": {
       "wifi_signal": { "name": "Señal Wi-Fi" },
       "wifi_network": { "name": "Red Wi-Fi" },
       "uptime": { "name": "Tiempo encendido" },
       "ram_free": { "name": "RAM libre" },
-      "viewers": { "name": "Espectadores activos" }
+      "ram_size": { "name": "RAM total" },
+      "ram_min_free": { "name": "RAM libre mínima" },
+      "app_size": { "name": "Tamaño del firmware" },
+      "flash_size": { "name": "Tamaño de la flash" },
+      "viewers": { "name": "Espectadores activos" },
+      "max_viewers": { "name": "Espectadores máximos" },
+      "ip_address": { "name": "Dirección IP" },
+      "wifi_status": { "name": "Estado de la Wi-Fi" },
+      "ap_clients": { "name": "Clientes del AP" },
+      "camera_time": { "name": "Hora de la cámara" },
+      "last_sync": { "name": "Última sincronización horaria" }
+    },
+    "select": {
+      "night_vision_mode": {
+        "name": "Modo de visión nocturna",
+        "state": {
+          "auto": "Automático",
+          "on": "Siempre encendida",
+          "off": "Siempre apagada"
+        }
+      },
+      "timezone": { "name": "Zona horaria" },
+      "rtsp_resolution": { "name": "Resolución del stream" },
+      "alarm_sound": { "name": "Sonido de la alarma" }
+    },
+    "time": {
+      "motion_schedule_start": { "name": "Inicio del horario de movimiento" },
+      "motion_schedule_end": { "name": "Fin del horario de movimiento" },
+      "alarm_schedule_start": { "name": "Inicio del horario de la alarma" },
+      "alarm_schedule_end": { "name": "Fin del horario de la alarma" },
+      "ota_window_start": { "name": "Inicio de la ventana de actualización" },
+      "ota_window_end": { "name": "Fin de la ventana de actualización" }
+    },
+    "text": {
+      "ntp_server1": { "name": "Servidor NTP 1" },
+      "ntp_server2": { "name": "Servidor NTP 2" },
+      "local_domain": { "name": "Dominio local" }
     },
     "button": {
-      "reboot": { "name": "Reiniciar" }
+      "reboot": { "name": "Reiniciar" },
+      "scan_wifi": { "name": "Escanear redes Wi-Fi" },
+      "sync_time": { "name": "Sincronizar hora" },
+      "check_firmware": { "name": "Buscar actualización de firmware" },
+      "factory_reset": { "name": "Restablecer de fábrica" }
+    },
+    "event": {
+      "motion": { "name": "Movimiento" },
+      "person": { "name": "Persona" }
     },
     "update": {
       "firmware": { "name": "Firmware" }

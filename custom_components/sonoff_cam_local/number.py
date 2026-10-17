@@ -12,7 +12,7 @@ from homeassistant.components.number import (
     NumberMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, EntityCategory
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -65,6 +65,17 @@ NUMBERS: tuple[SonoffCamNumberDescription, ...] = (
         native_min_value=0,
         native_max_value=100,
         native_unit_of_measurement=PERCENTAGE,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    SonoffCamNumberDescription(
+        key="alarm_duration",
+        value_fn=lambda c: float(c.data.alarm.duration),
+        set_fn=lambda c, v: c.client.set_alarm_config(duration=int(v)),
+        icon="mdi:timer-sand",
+        native_min_value=1,
+        native_max_value=60,
+        native_step=1,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
         entity_category=EntityCategory.CONFIG,
     ),
 )

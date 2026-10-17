@@ -2,6 +2,9 @@
   "config": {
     "step": {
       "user": {
+        "title": "Add a SONOFF CAM-S2"
+      },
+      "manual": {
         "title": "Connect to a SONOFF CAM-S2",
         "description": "Enter the camera's IP address and its local admin password (the one used to log in to the camera's own web console).",
         "data": {
@@ -13,6 +16,13 @@
           "host": "IP address or hostname of the camera.",
           "port": "WebSocket JSON-RPC port (default 80).",
           "password": "Leave empty only if the camera has no login password set."
+        }
+      },
+      "scan": {
+        "title": "Cameras found on your network",
+        "description": "Pick a camera and, if it needs one, enter its local admin password on the next screen.",
+        "data": {
+          "host": "Camera"
         }
       },
       "reconfigure": {
@@ -47,13 +57,15 @@
       "cannot_connect": "Failed to connect to the camera. Check the host and that the camera is powered on.",
       "invalid_auth": "Invalid password. The RTSP password is not accepted here - use the camera's local admin password.",
       "password_required": "This camera requires the local admin password.",
+      "no_cameras": "No SONOFF cameras were found on your network. Make sure the camera is powered on and on the same LAN, then try again.",
       "unknown": "Unexpected error while talking to the camera."
     },
     "abort": {
       "already_configured": "This camera is already configured.",
       "reauth_successful": "Reauthentication was successful.",
       "reconfigure_successful": "Reconfiguration was successful.",
-      "cannot_connect": "Failed to connect to the camera."
+      "cannot_connect": "Failed to connect to the camera.",
+      "not_sonoff": "The discovered device is not a SONOFF camera."
     }
   },
   "options": {
@@ -71,6 +83,32 @@
       }
     }
   },
+  "services": {
+    "set_wifi": {
+      "name": "Set Wi-Fi",
+      "description": "Join a new Wi-Fi network. If the credentials are wrong the camera becomes unreachable over Wi-Fi.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The camera to reconfigure."
+        },
+        "ssid": {
+          "name": "SSID",
+          "description": "SSID of the network to join."
+        },
+        "password": {
+          "name": "Password",
+          "description": "Password of the network to join."
+        }
+      }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "motion_detected": "{entity_name} detected motion",
+      "person_detected": "{entity_name} detected a person"
+    }
+  },
   "entity": {
     "binary_sensor": {
       "motion": { "name": "Motion" },
@@ -80,8 +118,12 @@
       "motion_detection": { "name": "Motion detection" },
       "person_detection": { "name": "Person detection" },
       "detect_all_motion": { "name": "Detect all motion" },
+      "motion_schedule": { "name": "Motion schedule" },
+      "alarm_armed": { "name": "Alarm armed" },
+      "alarm_on_motion": { "name": "Alarm on motion" },
+      "alarm_on_person": { "name": "Alarm on person" },
+      "alarm_schedule": { "name": "Alarm schedule" },
       "status_led": { "name": "Status LED" },
-      "night_vision": { "name": "Night vision" },
       "watermark": { "name": "On-screen watermark" },
       "screen_flip": { "name": "Flip image" },
       "onvif": { "name": "ONVIF" },
@@ -91,17 +133,62 @@
     "number": {
       "motion_sensitivity": { "name": "Motion sensitivity" },
       "speaker_volume": { "name": "Speaker volume" },
-      "microphone_volume": { "name": "Microphone volume" }
+      "microphone_volume": { "name": "Microphone volume" },
+      "alarm_duration": { "name": "Alarm duration" }
     },
     "sensor": {
       "wifi_signal": { "name": "Wi-Fi signal" },
       "wifi_network": { "name": "Wi-Fi network" },
       "uptime": { "name": "Uptime" },
       "ram_free": { "name": "Free RAM" },
-      "viewers": { "name": "Active viewers" }
+      "ram_size": { "name": "Total RAM" },
+      "ram_min_free": { "name": "Lowest free RAM" },
+      "app_size": { "name": "Firmware size" },
+      "flash_size": { "name": "Flash size" },
+      "viewers": { "name": "Active viewers" },
+      "max_viewers": { "name": "Maximum viewers" },
+      "ip_address": { "name": "IP address" },
+      "wifi_status": { "name": "Wi-Fi status" },
+      "ap_clients": { "name": "AP clients" },
+      "camera_time": { "name": "Camera time" },
+      "last_sync": { "name": "Last time sync" }
+    },
+    "select": {
+      "night_vision_mode": {
+        "name": "Night vision mode",
+        "state": {
+          "auto": "Auto",
+          "on": "Always on",
+          "off": "Always off"
+        }
+      },
+      "timezone": { "name": "Time zone" },
+      "rtsp_resolution": { "name": "Stream resolution" },
+      "alarm_sound": { "name": "Alarm sound" }
+    },
+    "time": {
+      "motion_schedule_start": { "name": "Motion schedule start" },
+      "motion_schedule_end": { "name": "Motion schedule end" },
+      "alarm_schedule_start": { "name": "Alarm schedule start" },
+      "alarm_schedule_end": { "name": "Alarm schedule end" },
+      "ota_window_start": { "name": "Update window start" },
+      "ota_window_end": { "name": "Update window end" }
+    },
+    "text": {
+      "ntp_server1": { "name": "NTP server 1" },
+      "ntp_server2": { "name": "NTP server 2" },
+      "local_domain": { "name": "Local domain" }
     },
     "button": {
-      "reboot": { "name": "Reboot" }
+      "reboot": { "name": "Reboot" },
+      "scan_wifi": { "name": "Scan Wi-Fi networks" },
+      "sync_time": { "name": "Sync time" },
+      "check_firmware": { "name": "Check for firmware update" },
+      "factory_reset": { "name": "Factory reset" }
+    },
+    "event": {
+      "motion": { "name": "Motion" },
+      "person": { "name": "Person" }
     },
     "update": {
       "firmware": { "name": "Firmware" }

@@ -49,3 +49,32 @@ class SonoffCamFirmwareUpdate(SonoffCamEntity, UpdateEntity):
         """Return the available firmware version, if any."""
         available = str(self.coordinator.data.ota.get("available_update") or "").strip()
         return available or self.installed_version
+
+    @property
+    def release_url(self) -> str | None:
+        """Return the changelog URL reported by the camera, if any."""
+        url = str(self.coordinator.data.ota.get("changelog_url") or "").strip()
+        return url or None
+
+    @property
+    def in_progress(self) -> bool:
+        """Return whether an OTA update is currently running."""
+        status = str(self.coordinator.data.upgrade.get("status") or "").strip().lower()
+        return status not in ("", "idle", "stop")
+
+    async def async_install(
+        self, version: str | None, *, backup: bool = False, **kwargs: object
+    ) -> None:
+        """Ask the camera to download and install the available firmware update.
+
+        This triggers the vendor's over-the-air upgrade (``Ota.SetConfig`` with
+        ``start: true``). The camera downloads from SONOFF's servers and reboots;
+        wrong or interrupted firmware can brick the device.
+        """
+        config = self.coordinator.data.ota_config.get("config") or {}
+        await self.coordinator.async_write(
+            self.coordinator.client.start_ota_update(
+                auto=bool(config.get("auto")),
+                window=str(config.get("time") or "2:00-4:00"),
+            )
+        )

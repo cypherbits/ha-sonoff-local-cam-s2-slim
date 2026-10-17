@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -25,6 +26,17 @@ from .coordinator import SonoffCamCoordinator
 from .entity import SonoffCamEntity
 
 PARALLEL_UPDATES = 0
+
+
+def _timestamp(value: Any) -> datetime | None:
+    """Convert a Unix epoch (seconds) into an aware datetime, or ``None``."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    if seconds <= 0:
+        return None
+    return datetime.fromtimestamp(seconds, tz=UTC)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -71,6 +83,80 @@ SENSORS: tuple[SonoffCamSensorDescription, ...] = (
         value_fn=lambda c: c.data.live_stream.get("curViewers"),
         icon="mdi:account-eye",
         entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SonoffCamSensorDescription(
+        key="max_viewers",
+        value_fn=lambda c: c.data.live_stream.get("maxViewers"),
+        icon="mdi:account-multiple",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        enabled_default=False,
+    ),
+    SonoffCamSensorDescription(
+        key="ip_address",
+        value_fn=lambda c: c.data.wifi.get("sta_ip"),
+        icon="mdi:ip-network",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SonoffCamSensorDescription(
+        key="wifi_status",
+        value_fn=lambda c: c.data.wifi.get("status"),
+        icon="mdi:wifi-check",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        enabled_default=False,
+    ),
+    SonoffCamSensorDescription(
+        key="ap_clients",
+        value_fn=lambda c: c.data.wifi.get("ap_client_count"),
+        icon="mdi:access-point",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        enabled_default=False,
+    ),
+    SonoffCamSensorDescription(
+        key="ram_size",
+        value_fn=lambda c: c.data.status.get("ram_size"),
+        icon="mdi:memory",
+        native_unit_of_measurement=UnitOfInformation.KILOBYTES,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        enabled_default=False,
+    ),
+    SonoffCamSensorDescription(
+        key="ram_min_free",
+        value_fn=lambda c: c.data.status.get("ram_min_free"),
+        icon="mdi:memory",
+        native_unit_of_measurement=UnitOfInformation.KILOBYTES,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        enabled_default=False,
+    ),
+    SonoffCamSensorDescription(
+        key="app_size",
+        value_fn=lambda c: c.data.status.get("app_size"),
+        icon="mdi:chip",
+        native_unit_of_measurement=UnitOfInformation.KILOBYTES,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        enabled_default=False,
+    ),
+    SonoffCamSensorDescription(
+        key="flash_size",
+        value_fn=lambda c: c.data.status.get("flash_size"),
+        icon="mdi:harddisk",
+        native_unit_of_measurement=UnitOfInformation.MEGABYTES,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        enabled_default=False,
+    ),
+    SonoffCamSensorDescription(
+        key="camera_time",
+        value_fn=lambda c: _timestamp(c.data.status.get("unixtime")),
+        icon="mdi:clock-outline",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SonoffCamSensorDescription(
+        key="last_sync",
+        value_fn=lambda c: _timestamp(c.data.status.get("last_sync_ts")),
+        icon="mdi:clock-sync",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        enabled_default=False,
     ),
 )
 

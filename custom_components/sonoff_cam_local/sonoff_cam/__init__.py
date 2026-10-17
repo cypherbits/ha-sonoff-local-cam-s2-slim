@@ -39,9 +39,11 @@ from .exceptions import (
 )
 from .methods import Method
 from .models import (
+    AlarmConfig,
     CameraEvent,
     DeviceInfo,
     DiscoveredCamera,
+    EffectiveSchedule,
     MotionConfig,
     NightVisionConfig,
     OnvifConfig,
@@ -67,9 +69,11 @@ __all__ = [
     "identify",
     "scan",
     # models
+    "AlarmConfig",
     "CameraEvent",
     "DeviceInfo",
     "DiscoveredCamera",
+    "EffectiveSchedule",
     "MotionConfig",
     "NightVisionConfig",
     "OnvifConfig",

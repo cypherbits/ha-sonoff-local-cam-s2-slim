@@ -35,11 +35,27 @@ async def _start(hass: HomeAssistant):
     )
 
 
+async def _manual_form(hass: HomeAssistant):
+    """Start the flow and open the manual-entry form."""
+    result = await _start(hass)
+    assert result["type"] is FlowResultType.MENU
+    return await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "manual"}
+    )
+
+
+async def test_user_flow_menu(hass: HomeAssistant) -> None:
+    """The user flow offers manual entry and a network scan."""
+    result = await _start(hass)
+    assert result["type"] is FlowResultType.MENU
+    assert set(result["menu_options"]) == {"manual", "scan"}
+
+
 async def test_user_flow_success(hass: HomeAssistant) -> None:
     """A valid form creates a config entry."""
     flow_patch, coordinator_patch = _patch()
     with flow_patch, coordinator_patch:
-        result = await _start(hass)
+        result = await _manual_form(hass)
         assert result["type"] is FlowResultType.FORM
 
         result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
@@ -54,7 +70,7 @@ async def test_user_flow_invalid_auth(hass: HomeAssistant) -> None:
     """A wrong password shows an error and does not create the entry."""
     flow_patch, coordinator_patch = _patch()
     with flow_patch, coordinator_patch:
-        result = await _start(hass)
+        result = await _manual_form(hass)
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {CONF_HOST: "192.168.1.100", CONF_PORT: 80, CONF_PASSWORD: "wrong"},
@@ -68,7 +84,7 @@ async def test_user_flow_cannot_connect(hass: HomeAssistant) -> None:
     """An unreachable camera shows cannot_connect."""
     flow_patch, coordinator_patch = _patch(UnreachableSonoffCamera)
     with flow_patch, coordinator_patch:
-        result = await _start(hass)
+        result = await _manual_form(hass)
         result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
 
     assert result["type"] is FlowResultType.FORM
@@ -79,7 +95,7 @@ async def test_user_flow_password_required(hass: HomeAssistant) -> None:
     """A camera that needs auth prompts for a password."""
     flow_patch, coordinator_patch = _patch()
     with flow_patch, coordinator_patch:
-        result = await _start(hass)
+        result = await _manual_form(hass)
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {CONF_HOST: "192.168.1.100", CONF_PORT: 80, CONF_PASSWORD: ""},
@@ -96,8 +112,41 @@ async def test_user_flow_already_configured(hass: HomeAssistant) -> None:
 
     flow_patch, coordinator_patch = _patch()
     with flow_patch, coordinator_patch:
-        result = await _start(hass)
+        result = await _manual_form(hass)
         result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def test_scan_flow_lists_cameras(hass: HomeAssistant) -> None:
+    """The scan step lists discovered cameras and configures the chosen one."""
+    flow_patch, coordinator_patch = _patch()
+    with (
+        flow_patch,
+        coordinator_patch,
+        patch(
+            "custom_components.sonoff_cam_local.config_flow._scan_network",
+            return_value=["192.168.1.100", "192.168.1.101"],
+        ),
+    ):
+        result = await _start(hass)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "scan"}
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "scan"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_HOST: "192.168.1.100"}
+        )
+        # The fake camera needs a password, so the flow asks for it next.
+        assert result["step_id"] == "dhcp_confirm"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_PASSWORD: PASSWORD}
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_HOST] == "192.168.1.100"

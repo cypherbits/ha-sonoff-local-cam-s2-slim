@@ -62,18 +62,46 @@ SWITCHES: tuple[SonoffCamSwitchDescription, ...] = (
         enabled_default=False,
     ),
     SonoffCamSwitchDescription(
+        key="motion_schedule",
+        value_fn=lambda c: c.data.motion.schedule.enabled,
+        set_fn=lambda c, v: c.client.set_motion_schedule(enabled=v),
+        icon="mdi:calendar-clock",
+        entity_category=EntityCategory.CONFIG,
+        enabled_default=False,
+    ),
+    SonoffCamSwitchDescription(
+        key="alarm_armed",
+        value_fn=lambda c: c.data.alarm.enabled,
+        set_fn=lambda c, v: c.client.set_alarm_config(enabled=v),
+        icon="mdi:alarm-light",
+    ),
+    SonoffCamSwitchDescription(
+        key="alarm_on_motion",
+        value_fn=lambda c: c.data.alarm.on_motion,
+        set_fn=lambda c, v: c.client.set_alarm_config(on_motion=v),
+        icon="mdi:motion-sensor",
+        entity_category=EntityCategory.CONFIG,
+    ),
+    SonoffCamSwitchDescription(
+        key="alarm_on_person",
+        value_fn=lambda c: c.data.alarm.on_person,
+        set_fn=lambda c, v: c.client.set_alarm_config(on_person=v),
+        icon="mdi:account-alert",
+        entity_category=EntityCategory.CONFIG,
+    ),
+    SonoffCamSwitchDescription(
+        key="alarm_schedule",
+        value_fn=lambda c: c.data.alarm.schedule.enabled,
+        set_fn=lambda c, v: c.client.set_alarm_schedule(enabled=v),
+        icon="mdi:calendar-clock",
+        entity_category=EntityCategory.CONFIG,
+        enabled_default=False,
+    ),
+    SonoffCamSwitchDescription(
         key="status_led",
         value_fn=lambda c: bool(c.data.led.get("enable")),
         set_fn=lambda c, v: c.client.set_led_config(_merge(c.data.led, enable=v)),
         icon="mdi:led-on",
-    ),
-    SonoffCamSwitchDescription(
-        key="night_vision",
-        value_fn=lambda c: bool(c.data.night_vision.get("infraredSetting")),
-        set_fn=lambda c, v: c.client.set_night_vision_config(
-            _merge(c.data.night_vision, infraredSetting=1 if v else 0)
-        ),
-        icon="mdi:weather-night",
     ),
     SonoffCamSwitchDescription(
         key="watermark",

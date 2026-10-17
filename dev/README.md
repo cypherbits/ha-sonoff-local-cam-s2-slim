@@ -23,8 +23,9 @@ Wait until the log shows Home Assistant has started, then open
 
 1. Go to **Settings → Devices & Services → Add Integration**.
 2. Search for **SONOFF CAM-S2 (Local)**.
-3. Enter the camera's **IP**, port **80** and the camera's **local admin
-   password** (the one for the camera's own web console, not the RTSP one).
+3. Choose **Add manually** and enter the camera's **IP**, port **80** and the
+   camera's **local admin password** (the one for the camera's own web console,
+   not the RTSP one). You can also choose **Scan the network** to find it.
 4. Optional: open **Configure** to change the poll interval or toggle ONVIF
    motion/person events.
 

@@ -50,6 +50,49 @@ class DeviceInfo:
 
 
 @dataclass
+class EffectiveSchedule:
+    """A recurring time window with weekday selection.
+
+    Both ``Motion.GetConfig`` and ``Alarm.GetConfig`` carry an ``effective``
+    block with the same shape (``enable``, ``from``, ``to``, ``days[]``,
+    ``allDays``). It is the schedule that arms the detector / siren.
+
+    The device formats ``from``/``to`` inconsistently (``"00:00"`` for motion,
+    ``"0:0"`` for alarm), so the value is kept as the raw string it returned.
+    """
+
+    enabled: bool = False
+    start: str = "00:00"
+    end: str = "00:00"
+    days: List[int] = field(default_factory=list)
+    all_days: bool = False
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_result(cls, result: Any) -> "EffectiveSchedule":
+        result = _as_dict(result)
+        days = result.get("days")
+        return cls(
+            enabled=bool(result.get("enable", 0)),
+            start=str(result.get("from", "00:00") or "00:00"),
+            end=str(result.get("to", "00:00") or "00:00"),
+            days=[int(day) for day in days] if isinstance(days, list) else [],
+            all_days=bool(result.get("allDays", 0)),
+            raw=result,
+        )
+
+    def to_params(self) -> Dict[str, Any]:
+        """Serialise back into the ``effective`` shape accepted by the device."""
+        return {
+            "enable": 1 if self.enabled else 0,
+            "from": self.start,
+            "to": self.end,
+            "days": list(self.days),
+            "allDays": 1 if self.all_days else 0,
+        }
+
+
+@dataclass
 class MotionConfig:
     """Result of ``Motion.GetConfig``.
 
@@ -61,6 +104,7 @@ class MotionConfig:
     detect_all: bool = False
     detect_human: bool = False
     sensitivity: int = 0
+    schedule: EffectiveSchedule = field(default_factory=EffectiveSchedule)
     raw: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -72,6 +116,7 @@ class MotionConfig:
             detect_all=bool(motion_type.get("all", False)),
             detect_human=bool(motion_type.get("humanoid", False)),
             sensitivity=int(result.get("sensitivity", 0) or 0),
+            schedule=EffectiveSchedule.from_result(result.get("effective")),
             raw=result,
         )
 
@@ -81,20 +126,93 @@ class MotionConfig:
             "motion_enable": self.enabled,
             "type": {"all": self.detect_all, "humanoid": self.detect_human},
             "sensitivity": self.sensitivity,
+            "effective": self.schedule.to_params(),
+        }
+
+
+@dataclass
+class AlarmConfig:
+    """Result of ``Alarm.GetConfig`` (the on-board siren).
+
+    The siren has no manual trigger on stock firmware: it sounds when
+    ``enableAlarm`` is set, a trigger type (``moveAlarmType`` /
+    ``humanoidAlarmType``) is armed and the corresponding detector fires.
+    ``duration`` is the blast length in seconds and ``soundId`` selects the
+    sound (e.g. ``"alarm1"``).
+
+    ``SetConfig`` is read-modify-write: fields omitted from the payload keep
+    their previous value, so always send the whole config back.
+    """
+
+    enabled: bool = False
+    duration: int = 10
+    sound_id: str = "alarm1"
+    on_motion: bool = False
+    on_person: bool = False
+    schedule: EffectiveSchedule = field(default_factory=EffectiveSchedule)
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_result(cls, result: Dict[str, Any]) -> "AlarmConfig":
+        result = _as_dict(result)
+        setting = _as_dict(result.get("alarmSetting"))
+        return cls(
+            enabled=bool(result.get("enableAlarm", 0)),
+            duration=int(setting.get("duration", 10) or 10),
+            sound_id=str(setting.get("soundId", "alarm1") or "alarm1"),
+            on_motion=bool(result.get("moveAlarmType", 0)),
+            on_person=bool(result.get("humanoidAlarmType", 0)),
+            schedule=EffectiveSchedule.from_result(result.get("effective")),
+            raw=result,
+        )
+
+    def to_params(self) -> Dict[str, Any]:
+        """Serialise back into the ``params`` shape accepted by the device."""
+        return {
+            "enableAlarm": 1 if self.enabled else 0,
+            "alarmSetting": {"duration": self.duration, "soundId": self.sound_id},
+            "effective": self.schedule.to_params(),
+            "moveAlarmType": 1 if self.on_motion else 0,
+            "humanoidAlarmType": 1 if self.on_person else 0,
         }
 
 
 @dataclass
 class NightVisionConfig:
-    """Result of ``NightVision.GetConfig``."""
+    """Result of ``NightVision.GetConfig``.
 
-    mode: Any = None
+    ``infrared_setting`` is the night-vision mode: ``0`` auto, ``1`` always on,
+    ``2`` always off (the enum baked into the web UI). ``SetConfig`` expects the
+    whole payload, so keep ``night_vision`` / ``light_strength`` around.
+    """
+
+    infrared_setting: int = 0
+    night_vision: int = 0
+    light_strength: int = 0
     raw: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def mode(self) -> int:
+        """Alias for :attr:`infrared_setting`."""
+        return self.infrared_setting
 
     @classmethod
     def from_result(cls, result: Dict[str, Any]) -> "NightVisionConfig":
         result = _as_dict(result)
-        return cls(mode=result.get("mode", result.get("night_vision")), raw=result)
+        return cls(
+            infrared_setting=int(result.get("infraredSetting", 0) or 0),
+            night_vision=int(result.get("nightVision", 0) or 0),
+            light_strength=int(result.get("lightStrength", 0) or 0),
+            raw=result,
+        )
+
+    def to_params(self) -> Dict[str, Any]:
+        """Serialise back into the ``params`` shape accepted by the device."""
+        return {
+            "infraredSetting": self.infrared_setting,
+            "nightVision": self.night_vision,
+            "lightStrength": self.light_strength,
+        }
 
 
 @dataclass

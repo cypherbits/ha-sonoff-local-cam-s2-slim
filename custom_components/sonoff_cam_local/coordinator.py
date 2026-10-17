@@ -25,6 +25,7 @@ from .const import (
     DEFAULT_RTSP_USERNAME,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    EVENT_DETECTION,
     RTSP_PORT,
     RTSP_STREAM_PATH,
 )
@@ -39,7 +40,14 @@ from .sonoff_cam.exceptions import (
     SonoffCamError,
     Timeout,
 )
-from .sonoff_cam.models import DeviceInfo, MotionConfig, OnvifConfig, ScreenConfig
+from .sonoff_cam.models import (
+    AlarmConfig,
+    DeviceInfo,
+    MotionConfig,
+    NightVisionConfig,
+    OnvifConfig,
+    ScreenConfig,
+)
 
 if TYPE_CHECKING:
     from . import SonoffCamConfigEntry
@@ -56,18 +64,24 @@ class SonoffCamData:
 
     status: dict[str, Any] = field(default_factory=dict)
     motion: MotionConfig = field(default_factory=MotionConfig)
-    night_vision: dict[str, Any] = field(default_factory=dict)
+    alarm: AlarmConfig = field(default_factory=AlarmConfig)
+    night_vision: NightVisionConfig = field(default_factory=NightVisionConfig)
     screen: ScreenConfig = field(default_factory=ScreenConfig)
     led: dict[str, Any] = field(default_factory=dict)
     speaker: dict[str, Any] = field(default_factory=dict)
     microphone: dict[str, Any] = field(default_factory=dict)
     onvif: OnvifConfig = field(default_factory=OnvifConfig)
     onvif_raw: dict[str, Any] = field(default_factory=dict)
+    system_config: dict[str, Any] = field(default_factory=dict)
+    timezone_info: dict[str, Any] = field(default_factory=dict)
     wifi: dict[str, Any] = field(default_factory=dict)
+    wifi_config: dict[str, Any] = field(default_factory=dict)
     live_stream: dict[str, Any] = field(default_factory=dict)
     ota: dict[str, Any] = field(default_factory=dict)
     ota_config: dict[str, Any] = field(default_factory=dict)
     websocket: dict[str, Any] = field(default_factory=dict)
+    websocket_status: dict[str, Any] = field(default_factory=dict)
+    upgrade: dict[str, Any] = field(default_factory=dict)
 
 
 class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
@@ -159,19 +173,27 @@ class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
     async def _fetch_all(self) -> SonoffCamData:
         data = SonoffCamData()
         data.status = await self._safe(self.client.get_status())
+        data.timezone_info = data.status.get("timezone_info") or {}
         data.motion = await self._safe(self.client.get_motion_config(), MotionConfig())
-        data.night_vision = await self._safe(self.client.raw_call("NightVision.GetConfig"))
+        data.alarm = await self._safe(self.client.get_alarm_config(), AlarmConfig())
+        data.night_vision = await self._safe(
+            self.client.get_night_vision_config(), NightVisionConfig()
+        )
         data.screen = await self._safe(self.client.get_screen_config(), ScreenConfig())
         data.led = await self._safe(self.client.get_led_config())
         data.speaker = await self._safe(self.client.get_speaker_config())
         data.microphone = await self._safe(self.client.get_microphone_config())
         data.onvif_raw = await self._safe(self.client.raw_call("Onvif.GetConfig"))
         data.onvif = OnvifConfig.from_result(data.onvif_raw)
+        data.system_config = await self._safe(self.client.get_system_config())
         data.wifi = await self._safe(self.client.wifi_status())
-        data.live_stream = await self._safe(self.client.raw_call("LiveStream.GetStatus"))
+        data.wifi_config = await self._safe(self.client.wifi_config())
+        data.live_stream = await self._safe(self.client.get_live_stream_status())
         data.ota = await self._safe(self.client.raw_call("Ota.GetStatus"))
         data.ota_config = await self._safe(self.client.raw_call("Ota.GetConfig"))
         data.websocket = await self._safe(self.client.raw_call("WebSocket.GetConfig"))
+        data.websocket_status = await self._safe(self.client.get_websocket_status())
+        data.upgrade = await self._safe(self.client.raw_call("Upgrade.GetStatus"))
         return data
 
     async def _safe(self, coro: Any, default: Any = None) -> Any:
@@ -223,6 +245,8 @@ class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
             changed = True
         if changed:
             self.async_update_listeners()
+        if changed and state and kind in (EVENT_MOTION, EVENT_PERSON):
+            self.hass.bus.async_fire(EVENT_DETECTION, {"device_id": self.device_id, "type": kind})
 
     # ------------------------------------------------------------- device info
     @property

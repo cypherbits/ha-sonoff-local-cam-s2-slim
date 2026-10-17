@@ -34,15 +34,17 @@ async def async_setup_entry(
 class SonoffCamDetectionSensor(SonoffCamEntity, BinarySensorEntity):
     """A motion or AI person-detection state pushed over ONVIF."""
 
-    _attr_device_class = BinarySensorDeviceClass.MOTION
-
     def __init__(self, coordinator: SonoffCamCoordinator, key: str) -> None:
         super().__init__(coordinator, key)
         self._attr_translation_key = key
+        self._key = key
+        self._attr_device_class = (
+            BinarySensorDeviceClass.OCCUPANCY if key == "person" else BinarySensorDeviceClass.MOTION
+        )
 
     @property
     def is_on(self) -> bool:
         """Return whether the detection is currently active."""
-        if self._attr_translation_key == "person":
+        if self._key == "person":
             return self.coordinator.person_active
         return self.coordinator.motion_active

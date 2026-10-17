@@ -13,7 +13,12 @@
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/cypherbits/ha-sonoff-local-cam-s2-slim/issues",
-  "quality_scale": "bronze",
+  "quality_scale": "silver",
   "requirements": ["websockets>=12.0"],
-  "version": "1.0.0"
+  "version": "1.1.0",
+  "zeroconf": [
+    {
+      "type": "_rtsp._tcp.local."
+    }
+  ]
 }

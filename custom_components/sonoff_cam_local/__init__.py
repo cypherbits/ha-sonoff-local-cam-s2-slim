@@ -13,14 +13,19 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN  # noqa: F401  (re-exported for convenience)
 from .coordinator import SonoffCamCoordinator
+from .services import async_setup_services
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.CAMERA,
+    Platform.EVENT,
     Platform.NUMBER,
+    Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.TEXT,
+    Platform.TIME,
     Platform.UPDATE,
 ]
 
@@ -29,6 +34,8 @@ type SonoffCamConfigEntry = ConfigEntry[SonoffCamCoordinator]
 
 async def async_setup_entry(hass: HomeAssistant, entry: SonoffCamConfigEntry) -> bool:
     """Set up a config entry."""
+    await async_setup_services(hass)
+
     coordinator = SonoffCamCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 

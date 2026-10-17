@@ -7,6 +7,10 @@ from typing import Final
 DOMAIN: Final = "sonoff_cam_local"
 MANUFACTURER: Final = "SONOFF"
 
+#: Bus event fired on every motion/person detection (used by device triggers
+#: and the event entities). Data: ``{"device_id": str, "type": "motion"|"person"}``.
+EVENT_DETECTION: Final = f"{DOMAIN}_detection"
+
 # --- Configuration keys -----------------------------------------------------
 CONF_HOST: Final = "host"
 CONF_PORT: Final = "port"

@@ -29,8 +29,10 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 from .exceptions import NotSupported
 from .methods import Method
 from .models import (
+    AlarmConfig,
     CameraEvent,
     DeviceInfo,
+    EffectiveSchedule,
     MotionConfig,
     NightVisionConfig,
     OnvifConfig,
@@ -117,6 +119,18 @@ class SonoffCamera:
     async def reboot(self) -> Dict[str, Any]:
         return await self.control("reboot")
 
+    async def factory_reset(self) -> Dict[str, Any]:
+        """Factory-reset the camera (``System.Control action=factory_reset``)."""
+        return await self.control("factory_reset")
+
+    async def set_timezone(self, timezone_id: str) -> Dict[str, Any]:
+        """Set the device time zone (``System.SetTimeZone``)."""
+        return await self.rpc.call(Method.SYSTEM_SET_TIMEZONE, {"timezone_id": timezone_id})
+
+    async def set_time(self, unixtime: int) -> Dict[str, Any]:
+        """Set the device clock from a Unix epoch (``System.SetTime``)."""
+        return await self.rpc.call(Method.SYSTEM_SET_TIME, {"unixtime": int(unixtime)})
+
     # ----------------------------------------------------------------- motion
     async def get_motion_config(self) -> MotionConfig:
         """Motion/AI detection settings (``Motion.GetConfig``)."""
@@ -148,12 +162,106 @@ class SonoffCamera:
     async def set_motion_enabled(self, enabled: bool) -> MotionConfig:
         return await self.set_motion_config(enabled=enabled)
 
+    async def set_motion_schedule(
+        self,
+        *,
+        enabled: Optional[bool] = None,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        days: Optional[List[int]] = None,
+        all_days: Optional[bool] = None,
+    ) -> MotionConfig:
+        """Update only the motion ``effective`` schedule (read-modify-write)."""
+        current = await self.get_motion_config()
+        schedule = current.schedule
+        if enabled is not None:
+            schedule.enabled = enabled
+        if start is not None:
+            schedule.start = start
+        if end is not None:
+            schedule.end = end
+        if days is not None:
+            schedule.days = list(days)
+        if all_days is not None:
+            schedule.all_days = all_days
+        return await self.set_motion_config(current)
+
+    # ------------------------------------------------------------------ alarm
+    async def get_alarm_config(self) -> AlarmConfig:
+        """Siren settings (``Alarm.GetConfig``).
+
+        ``Alarm`` is absent from the web bundle; the method was found by probing
+        the device. There is no manual trigger -- the siren sounds when it is
+        armed and a detector fires. See :class:`~sonoff_cam.models.AlarmConfig`.
+        """
+        return AlarmConfig.from_result(await self.rpc.call(Method.ALARM_GET_CONFIG))
+
+    async def set_alarm_config(
+        self,
+        config: Optional[AlarmConfig] = None,
+        *,
+        enabled: Optional[bool] = None,
+        duration: Optional[int] = None,
+        sound: Optional[str] = None,
+        on_motion: Optional[bool] = None,
+        on_person: Optional[bool] = None,
+        schedule: Optional[EffectiveSchedule] = None,
+    ) -> AlarmConfig:
+        """Update the siren settings (read-modify-write: send the whole config)."""
+        current = config if isinstance(config, AlarmConfig) else await self.get_alarm_config()
+        params = current.to_params()
+        if enabled is not None:
+            params["enableAlarm"] = 1 if enabled else 0
+        if duration is not None:
+            params["alarmSetting"]["duration"] = int(duration)
+        if sound is not None:
+            params["alarmSetting"]["soundId"] = sound
+        if on_motion is not None:
+            params["moveAlarmType"] = 1 if on_motion else 0
+        if on_person is not None:
+            params["humanoidAlarmType"] = 1 if on_person else 0
+        if schedule is not None:
+            params["effective"] = schedule.to_params()
+        await self.rpc.call(Method.ALARM_SET_CONFIG, params)
+        return await self.get_alarm_config()
+
+    async def set_alarm_schedule(
+        self,
+        *,
+        enabled: Optional[bool] = None,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        days: Optional[List[int]] = None,
+        all_days: Optional[bool] = None,
+    ) -> AlarmConfig:
+        """Update only the alarm ``effective`` schedule (read-modify-write)."""
+        current = await self.get_alarm_config()
+        schedule = current.schedule
+        if enabled is not None:
+            schedule.enabled = enabled
+        if start is not None:
+            schedule.start = start
+        if end is not None:
+            schedule.end = end
+        if days is not None:
+            schedule.days = list(days)
+        if all_days is not None:
+            schedule.all_days = all_days
+        return await self.set_alarm_config(current)
+
     # ------------------------------------------------------------- night vision
     async def get_night_vision_config(self) -> NightVisionConfig:
         return NightVisionConfig.from_result(await self.rpc.call(Method.NIGHT_VISION_GET_CONFIG))
 
     async def set_night_vision_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         return await self.rpc.call(Method.NIGHT_VISION_SET_CONFIG, config)
+
+    async def set_night_vision_mode(self, infrared_setting: int) -> NightVisionConfig:
+        """Set the night-vision mode (0 = auto, 1 = always on, 2 = always off)."""
+        current = await self.get_night_vision_config()
+        current.infrared_setting = int(infrared_setting)
+        await self.rpc.call(Method.NIGHT_VISION_SET_CONFIG, current.to_params())
+        return await self.get_night_vision_config()
 
     # ------------------------------------------------------------------ screen
     async def get_screen_config(self) -> ScreenConfig:
@@ -168,6 +276,22 @@ class SonoffCamera:
 
     async def set_onvif_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         return await self.rpc.call(Method.ONVIF_SET_CONFIG, config)
+
+    async def set_rtsp_resolution(self, resolution: str) -> OnvifConfig:
+        """Set the RTSP/ONVIF stream resolution (``"1080P"`` or ``"360P"``).
+
+        ``Onvif.SetConfig`` needs the whole payload (user, password, enable and
+        rtspResolution), so read-modify-write from the current config.
+        """
+        current = await self.rpc.call(Method.ONVIF_GET_CONFIG)
+        payload = {
+            "user": current.get("user", ""),
+            "password": current.get("password", ""),
+            "enable": current.get("enable", True),
+            "rtspResolution": resolution,
+        }
+        await self.rpc.call(Method.ONVIF_SET_CONFIG, payload)
+        return await self.get_onvif_config()
 
     # ------------------------------------------------------------- status LED
     async def get_led_config(self) -> Dict[str, Any]:
@@ -195,6 +319,50 @@ class SonoffCamera:
 
     async def wifi_scan(self) -> Dict[str, Any]:
         return await self.rpc.call(Method.WIFI_SCAN)
+
+    async def wifi_config(self) -> Dict[str, Any]:
+        return await self.rpc.call(Method.WIFI_GET_CONFIG)
+
+    async def set_wifi_config(
+        self, ssid: str, password: str, *, enable: bool = True
+    ) -> Dict[str, Any]:
+        """Join a Wi-Fi network (``WiFi.SetConfig``).
+
+        This drops the camera off its current network and reconnects to ``ssid``;
+        if the credentials are wrong the camera becomes unreachable over Wi-Fi.
+        """
+        payload = {
+            "config": {
+                "ap": {},
+                "sta": {"enable": enable, "ssid": ssid, "pass": password, "ipv4mode": "dhcp"},
+            }
+        }
+        return await self.rpc.call(Method.WIFI_SET_CONFIG, payload)
+
+    # ------------------------------------------------------------- live stream
+    async def get_live_stream_status(self) -> Dict[str, Any]:
+        return await self.rpc.call(Method.LIVE_STREAM_GET_STATUS)
+
+    # -------------------------------------------------------------- websocket
+    async def get_websocket_status(self) -> Dict[str, Any]:
+        return await self.rpc.call(Method.WEBSOCKET_GET_STATUS)
+
+    # -------------------------------------------------------------------- ota
+    async def get_ota_config(self) -> Dict[str, Any]:
+        return await self.rpc.call(Method.OTA_GET_CONFIG)
+
+    async def set_ota_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update OTA settings (``Ota.SetConfig``); ``config`` is merged in full."""
+        return await self.rpc.call(Method.OTA_SET_CONFIG, {"config": config})
+
+    async def start_ota_update(self, *, auto: bool = False, window: str = "2:00-4:00") -> Dict[str, Any]:
+        """Ask the camera to check for and install a firmware update over the air."""
+        return await self.set_ota_config({"query": True, "start": True, "auto": auto, "time": window})
+
+    # ----------------------------------------------------------------- sonoff
+    async def set_name(self, name: str) -> Dict[str, Any]:
+        """Rename the camera (``Sonoff.SetConfig``)."""
+        return await self.rpc.call(Method.SONOFF_SET_CONFIG, {"config": {"name": name}})
 
     # ------------------------------------------------------------------ events
     async def events(self) -> AsyncIterator[Union[CameraEvent, StatusUpdate]]:

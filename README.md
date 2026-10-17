@@ -21,15 +21,21 @@ inside `custom_components/sonoff_cam_local/sonoff_cam/`.
 |---|---|
 | `camera` | Live RTSP stream (HLS/WebRTC through the `stream` integration) |
 | `binary_sensor` | Motion, Person detection — real-time via ONVIF |
-| `switch` | Motion detection, Person detection, Detect-all-motion, Status LED, Night vision, Watermark, Flip image, ONVIF, Automatic updates, WebSocket client |
-| `number` | Motion sensitivity, Speaker volume, Microphone volume |
-| `sensor` | Wi-Fi signal (dBm), Wi-Fi network, Uptime, Free RAM, Active viewers |
-| `button` | Reboot |
-| `update` | Firmware (informational) |
+| `event` | Motion, Person — one event per detection (use in automations) |
+| `switch` | Motion detection, Person detection, Detect-all-motion, Motion schedule, Alarm armed, Alarm on motion, Alarm on person, Alarm schedule, Status LED, Watermark, Flip image, ONVIF, Automatic updates, WebSocket client |
+| `select` | Night vision mode (auto/on/off), Time zone, Stream resolution, Alarm sound |
+| `number` | Motion sensitivity, Speaker volume, Microphone volume, Alarm duration |
+| `sensor` | Wi-Fi signal, Wi-Fi network, IP address, Wi-Fi status, AP clients, Uptime, Free/Total/Lowest RAM, Firmware size, Flash size, Active/Max viewers, Camera time, Last time sync |
+| `time` | Motion/alarm schedule start & end, Firmware update window |
+| `text` | NTP server 1/2, Local domain |
+| `button` | Reboot, Scan Wi-Fi, Sync time, Check for firmware update, Factory reset |
+| `update` | Firmware (reports and can install the vendor OTA) |
 
 State is refreshed by a coordinator (default every 60 s, configurable). Motion
 and person detection are **pushed** from the camera's ONVIF PullPoint service,
-so they react immediately.
+so they react immediately. Many entities are `diagnostic`/`config` and are
+**disabled by default** (schedules, NTP, time zone, sound, factory reset, …);
+enable them from the entity's settings when you need them.
 
 ---
 
@@ -89,8 +95,16 @@ them from `Onvif.GetConfig` once you are logged in with the admin password.
 
 4. Home Assistant validates the connection and creates a device for the camera.
 
-If the camera is found automatically over DHCP, Home Assistant offers a
-**discovered** card; confirm it and enter the password.
+The add-integration dialog offers two paths:
+
+* **Add manually** — enter the host, port and password yourself.
+* **Scan the network** — the integration sweeps your LAN for SONOFF cameras
+  (RTSP banner `SONOFF_rtspserver`) and lists what it finds; pick one and enter
+  its password if prompted.
+
+If the camera is found automatically over **DHCP** (MAC prefix `2CCC7A`) or
+**mDNS** (`_rtsp._tcp`), Home Assistant also offers a **discovered** card;
+confirm it and enter the password.
 
 ### Options
 
@@ -123,8 +137,13 @@ stream (there is no separate snapshot endpoint on this firmware).
 * **Motion detection** — master switch (`motion_enable`).
 * **Person detection** — AI humanoid detector (`type.humanoid`).
 * **Detect all motion** — generic motion (`type.all`). *Disabled by default.*
+* **Motion schedule** — arms the detector only inside a time window.
+  *Disabled by default.*
+* **Alarm armed** — enables the on-board siren (`enableAlarm`).
+* **Alarm on motion** / **Alarm on person** — which detectors sound the siren.
+* **Alarm schedule** — arms the siren only inside a time window.
+  *Disabled by default.*
 * **Status LED** — the camera's indicator LED.
-* **Night vision** — infrared.
 * **On-screen watermark** — timestamp/OSD overlay.
 * **Flip image** — 180° rotation. *Disabled by default.*
 * **ONVIF** — turns the camera's ONVIF service on/off.
@@ -132,35 +151,72 @@ stream (there is no separate snapshot endpoint on this firmware).
 * **WebSocket client** — the camera's outbound WebSocket client config.
   *Disabled by default.*
 
+### Selects
+
+* **Night vision mode** — Auto / Always on / Always off (`infraredSetting`).
+* **Time zone** — the camera's time zone. *Disabled by default.*
+* **Stream resolution** — `1080P` or `360P`.
+* **Alarm sound** — the siren sound (`arm1`…). *Disabled by default.*
+
 ### Numbers
 
 * **Motion sensitivity** — 0–10.
 * **Speaker volume** — 0–100 %.
 * **Microphone volume** — 0–100 %.
+* **Alarm duration** — siren blast length in seconds (1–60).
 
 ### Sensors
 
 * **Wi-Fi signal** — RSSI in dBm.
 * **Wi-Fi network** — connected SSID.
+* **IP address** — current station IP.
+* **Wi-Fi status** / **AP clients** — *Disabled by default.*
 * **Uptime** — seconds since boot.
-* **Free RAM** — kilobytes.
-* **Active viewers** — current RTSP viewers.
+* **Free RAM** / **Total RAM** / **Lowest free RAM** — kilobytes.
+* **Firmware size** / **Flash size** — kilobytes / megabytes.
+* **Active viewers** / **Maximum viewers** — RTSP viewers.
+* **Camera time** / **Last time sync** — device clock.
 
-### Button
+### Time
+
+* **Motion schedule start / end**, **Alarm schedule start / end** — the daily
+  window for each schedule. *Disabled by default.*
+* **Update window start / end** — the camera's OTA maintenance window.
+  *Disabled by default.*
+
+### Text
+
+* **NTP server 1 / 2** and **Local domain** — device networking settings.
+  *Disabled by default.*
+
+### Buttons
 
 * **Reboot** — restarts the camera.
+* **Scan Wi-Fi networks** — runs `WiFi.Scan` and fires a `sonoff_cam_local_wifi_scan`
+  event with the results.
+* **Sync time** — writes Home Assistant's clock to the camera.
+* **Check for firmware update** — asks the camera to check for an update.
+* **Factory reset** — wipes the camera. *Disabled by default; destructive.*
 
 ### Update
 
-* **Firmware** — reports the installed version and any OTA update advertised by
-  the camera. *Informational only and disabled by default; installing an update
-  from Home Assistant has not been verified on stock firmware.*
+* **Firmware** — reports the installed version, the changelog URL and any OTA
+  update. Pressing **Install** triggers the vendor OTA (the camera downloads
+  and installs from SONOFF's servers, then reboots). *Disabled by default.*
+
+### Alarm / siren
+
+`Alarm.GetConfig` exposes the camera's on-board siren. There is **no manual
+trigger**: the siren sounds when *Alarm armed* is on, at least one of *Alarm on
+motion* / *Alarm on person* is on, and the matching detector actually fires. The
+sound lasts *Alarm duration* seconds. All alarm writes are read-modify-write, so
+toggling one setting never clobbers the others.
 
 ---
 
 ## Automations
 
-Motion and person detection are proper binary sensors, so use them directly:
+Motion and person detection are binary sensors, so use them directly:
 
 ```yaml
 automation:
@@ -175,7 +231,62 @@ automation:
           message: "Person detected at the front door"
 ```
 
+There are also **device triggers** (*detected motion* / *detected a person*) and
+`event` entities (`event.cam_s2_motion`, `event.cam_s2_person`), which fire once
+per detection — better suited to "every occurrence" automations than a binary
+sensor's on/off state.
+
+```yaml
+automation:
+  - alias: Chime on every motion
+    triggers:
+      - trigger: device
+        device_id: <camera-device-id>
+        domain: sonoff_cam_local
+        type: motion_detected
+    actions:
+      - action: media_player.play_media
+        target:
+          entity_id: media_player.kitchen
+        data:
+          media_content_id: /local/chime.mp3
+          media_content_type: music
+```
+
 ---
+
+## Services
+
+### `sonoff_cam_local.set_wifi`
+
+Joins a new Wi-Fi network. **This drops the camera off its current network**; if
+the credentials are wrong the camera becomes unreachable over Wi-Fi and must be
+recovered in AP setup mode.
+
+```yaml
+action: sonoff_cam_local.set_wifi
+data:
+  device_id: <camera-device-id>
+  ssid: MyHomeWiFi
+  password: "secret"
+```
+
+When a Wi-Fi scan is started (button or `sonoff_cam_local_wifi_scan` event), the
+results are delivered as a bus event:
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: sonoff_cam_local_wifi_scan
+```
+
+---
+
+## Diagnostics
+
+**Settings → Devices & Services → SONOFF CAM-S2 → Download diagnostics**
+produces a JSON dump of the camera's readable surface. Passwords, SSIDs and
+inline RTSP/AP credentials are **redacted** before the file is produced.
 
 ## Troubleshooting
 
@@ -217,6 +328,26 @@ Home Assistant polls the JSON-RPC `Get*` methods for status and calls `Set*`
 methods for control, while ONVIF PullPoint provides the motion/person events.
 The bundled `sonoff_cam` package implements the digest handshake, the RPC
 client, the typed models and a minimal RTSP/ONVIF helper.
+
+Reference firmware: **2.2.2** (`SN-CAM-S2-01`).
+
+---
+
+## Notes & limitations
+
+* **Firmware install** (the *Firmware* update entity's **Install** and the
+  *Factory reset* button) is enabled but destructive — a wrong or interrupted
+  flash can brick the camera. They are disabled by default; enable them only if
+  you know what you are doing.
+* The camera's siren has **no manual trigger** on stock firmware; it only sounds
+  on a real detection while armed. See the *Alarm / siren* section.
+* The camera hands back the **RTSP and AP passwords in cleartext** from
+  `Onvif.GetConfig` / `WiFi.GetConfig`. They are never written to attributes and
+  are redacted in diagnostics, but treat any raw dump as sensitive.
+* `SetConfig` calls on this firmware are **read-modify-write**: omitting a field
+  keeps its previous value. The integration always reads the full config first.
+* The RPC push (`NotifyEvent`) stream is unreliable on stock firmware; motion and
+  person events come from **ONVIF**.
 
 ---
 

@@ -1,0 +1,28 @@
+set_wifi:
+  name: Set Wi-Fi
+  description: >-
+    Join a new Wi-Fi network. The camera drops off its current network and
+    reconnects; if the credentials are wrong it becomes unreachable over Wi-Fi
+    and must be recovered in AP setup mode.
+  fields:
+    device_id:
+      name: Device
+      description: The camera to reconfigure.
+      required: true
+      selector:
+        device:
+          integration: sonoff_cam_local
+    ssid:
+      name: SSID
+      description: SSID of the network to join.
+      required: true
+      example: MyHomeWiFi
+      selector:
+        text:
+    password:
+      name: Password
+      description: Password of the network to join.
+      required: true
+      selector:
+        text:
+          type: password
