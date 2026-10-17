@@ -1,3 +1,30 @@
+trigger_alarm:
+  name: Trigger alarm
+  description: >-
+    Sound the camera siren once. The stock firmware has no manual trigger, so
+    this arms the alarm and fakes a detection by briefly flipping the image
+    (~1.5 s); the original alarm and screen settings are then restored. The
+    image flip also emits the camera's normal ONVIF motion events.
+  fields:
+    device_id:
+      name: Device
+      description: The camera whose siren to sound. Optional if you only have one.
+      required: false
+      selector:
+        device:
+          integration: sonoff_cam_local
+    duration:
+      name: Duration
+      description: How many seconds the siren should sound.
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: s
+          mode: box
+
 set_wifi:
   name: Set Wi-Fi
   description: >-

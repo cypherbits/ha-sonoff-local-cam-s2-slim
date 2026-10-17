@@ -24,6 +24,7 @@ Example
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 from .exceptions import NotSupported
@@ -248,6 +249,50 @@ class SonoffCamera:
         if all_days is not None:
             schedule.all_days = all_days
         return await self.set_alarm_config(current)
+
+    async def test_alarm(self, duration: int = 1) -> None:
+        """Sound the siren once by faking a detection, then restore the config.
+
+        The stock firmware has **no** method to fire the siren on demand (every
+        ``Alarm.Trigger`` / ``Play`` / ``Start`` / ``Test`` candidate answers
+        ``-103``). The only way is to arm the alarm and let a detector fire; this
+        helper generates that motion by briefly flipping the image
+        (``Screen.SetConfig screenFlip``), which reproduces every time.
+
+        Side effects: the image is flipped for ~1.5 s and the ``screenFlip``
+        change makes the camera emit its usual ONVIF motion events. The original
+        ``Alarm.GetConfig`` and ``Screen.GetConfig`` are restored in a
+        ``finally`` block, so a failure can never leave the camera armed.
+        """
+        original_alarm = await self.get_alarm_config()
+        original_screen = await self.get_screen_config()
+
+        staged = original_alarm.to_params()
+        staged["enableAlarm"] = 1
+        staged["alarmSetting"]["duration"] = max(1, int(duration))
+        staged["moveAlarmType"] = 1
+        staged["humanoidAlarmType"] = 1
+        staged["effective"] = {
+            "enable": 1,
+            "from": "00:00",
+            "to": "23:59",
+            "days": list(original_alarm.schedule.days) or list(range(7)),
+            "allDays": 1,
+        }
+
+        def flip(value: bool) -> Dict[str, Any]:
+            return {
+                "watermarkDisplay": original_screen.watermark_display,
+                "screenFlip": value,
+            }
+
+        try:
+            await self.rpc.call(Method.ALARM_SET_CONFIG, staged)
+            await self.rpc.call(Method.SCREEN_SET_CONFIG, flip(True))
+            await asyncio.sleep(max(1, int(duration)) + 0.5)
+        finally:
+            await self.rpc.call(Method.SCREEN_SET_CONFIG, flip(original_screen.screen_flip))
+            await self.rpc.call(Method.ALARM_SET_CONFIG, original_alarm.to_params())
 
     # ------------------------------------------------------------- night vision
     async def get_night_vision_config(self) -> NightVisionConfig:

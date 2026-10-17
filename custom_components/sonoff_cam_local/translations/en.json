@@ -101,6 +101,20 @@
           "description": "Password of the network to join."
         }
       }
+    },
+    "trigger_alarm": {
+      "name": "Trigger alarm",
+      "description": "Sound the camera siren once. The firmware has no manual trigger, so this arms the alarm and briefly flips the image to fake motion, then restores everything.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The camera whose siren to sound. Optional if you only have one."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "How many seconds the siren should sound."
+        }
+      }
     }
   },
   "device_automation": {
@@ -181,6 +195,7 @@
     },
     "button": {
       "reboot": { "name": "Reboot" },
+      "test_alarm": { "name": "Test alarm" },
       "scan_wifi": { "name": "Scan Wi-Fi networks" },
       "sync_time": { "name": "Sync time" },
       "check_firmware": { "name": "Check for firmware update" },

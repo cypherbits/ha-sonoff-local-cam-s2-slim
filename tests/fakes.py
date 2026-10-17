@@ -137,6 +137,9 @@ class FakeSonoffCamera:
     async def set_alarm_schedule(self, **kwargs) -> AlarmConfig:
         return await self.get_alarm_config()
 
+    async def test_alarm(self, duration: int = 1) -> None:
+        return None
+
     async def set_screen_config(self, config) -> dict:
         return config
 

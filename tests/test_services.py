@@ -52,3 +52,25 @@ async def test_set_wifi_service(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     assert mock_set.await_args.args[1:] == ("NewNet", "pw")
+
+
+async def test_trigger_alarm_service(hass: HomeAssistant) -> None:
+    """The trigger_alarm service sounds the siren with the given duration."""
+    await _setup(hass)
+    assert hass.services.has_service(DOMAIN, "trigger_alarm")
+
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, DEVICE_ID)})
+    assert device is not None
+
+    with patch.object(
+        FakeSonoffCamera, "test_alarm", return_value=None, autospec=True
+    ) as mock_test:
+        await hass.services.async_call(
+            DOMAIN,
+            "trigger_alarm",
+            {"device_id": device.id, "duration": 3},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert mock_test.await_args.args[1] == 3

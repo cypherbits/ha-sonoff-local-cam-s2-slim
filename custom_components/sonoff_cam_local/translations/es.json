@@ -101,6 +101,20 @@
           "description": "Contraseña de la red a la que conectarse."
         }
       }
+    },
+    "trigger_alarm": {
+      "name": "Disparar alarma",
+      "description": "Hace sonar la sirena una vez. El firmware no tiene disparo manual, así que arma la alarma y voltea la imagen un instante para simular movimiento, restaurando todo después.",
+      "fields": {
+        "device_id": {
+          "name": "Dispositivo",
+          "description": "La cámara cuya sirena hacer sonar. Opcional si solo tienes una."
+        },
+        "duration": {
+          "name": "Duración",
+          "description": "Cuántos segundos debe sonar la sirena."
+        }
+      }
     }
   },
   "device_automation": {
@@ -181,6 +195,7 @@
     },
     "button": {
       "reboot": { "name": "Reiniciar" },
+      "test_alarm": { "name": "Probar alarma" },
       "scan_wifi": { "name": "Escanear redes Wi-Fi" },
       "sync_time": { "name": "Sincronizar hora" },
       "check_firmware": { "name": "Buscar actualización de firmware" },

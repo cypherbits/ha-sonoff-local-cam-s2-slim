@@ -22,6 +22,9 @@ _LOGGER = logging.getLogger(__name__)
 #: Bus event fired with the results of a Wi-Fi scan.
 EVENT_WIFI_SCAN = f"{DOMAIN}_wifi_scan"
 
+#: Default siren duration (seconds) when testing the alarm.
+TEST_ALARM_DURATION = 1
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -33,6 +36,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             SonoffCamRebootButton(coordinator),
+            SonoffCamTestAlarmButton(coordinator),
             SonoffCamScanWifiButton(coordinator),
             SonoffCamSyncTimeButton(coordinator),
             SonoffCamCheckFirmwareButton(coordinator),
@@ -63,6 +67,21 @@ class SonoffCamRebootButton(_SonoffCamButton):
     async def async_press(self) -> None:
         """Reboot the camera."""
         await self.coordinator.async_write(self.coordinator.client.reboot())
+
+
+class SonoffCamTestAlarmButton(_SonoffCamButton):
+    """Sound the siren once by faking a detection (disabled by default)."""
+
+    _attr_icon = "mdi:alarm-light-outline"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: SonoffCamCoordinator) -> None:
+        super().__init__(coordinator, "test_alarm")
+
+    async def async_press(self) -> None:
+        """Arm the alarm, fake motion, and restore the config afterwards."""
+        await self.coordinator.async_write(self.coordinator.client.test_alarm(TEST_ALARM_DURATION))
 
 
 class SonoffCamScanWifiButton(_SonoffCamButton):
