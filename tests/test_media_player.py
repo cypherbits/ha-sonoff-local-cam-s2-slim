@@ -42,6 +42,20 @@ async def test_speaker_entity_exists(hass: HomeAssistant) -> None:
     assert state.state == "idle"
 
 
+async def test_speaker_supports_play_and_browse(hass: HomeAssistant) -> None:
+    """The speaker advertises PLAY_MEDIA and BROWSE_MEDIA.
+
+    The HA media browser only lists players that support ``BROWSE_MEDIA``, so
+    this must stay set or the camera disappears from the playback targets.
+    """
+    from homeassistant.components.media_player import MediaPlayerEntityFeature
+
+    await _setup(hass)
+    features = hass.states.get(ENTITY_ID).attributes["supported_features"]
+    assert features & MediaPlayerEntityFeature.PLAY_MEDIA
+    assert features & MediaPlayerEntityFeature.BROWSE_MEDIA
+
+
 async def test_play_media_opens_webrtc_session(hass: HomeAssistant) -> None:
     """play_media streams decoded audio through a WebRTC session."""
     await _setup(hass)

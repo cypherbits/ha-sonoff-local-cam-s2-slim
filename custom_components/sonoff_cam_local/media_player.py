@@ -16,6 +16,7 @@ from urllib.parse import urljoin
 import av
 from homeassistant.components import media_source
 from homeassistant.components.media_player import (
+    BrowseMedia,
     MediaPlayerDeviceClass,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
@@ -57,7 +58,8 @@ class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
     _attr_device_class = MediaPlayerDeviceClass.SPEAKER
     _attr_translation_key = "speaker"
     _attr_supported_features = (
-        MediaPlayerEntityFeature.PLAY_MEDIA
+        MediaPlayerEntityFeature.BROWSE_MEDIA
+        | MediaPlayerEntityFeature.PLAY_MEDIA
         | MediaPlayerEntityFeature.STOP
         | MediaPlayerEntityFeature.VOLUME_SET
     )
@@ -88,6 +90,21 @@ class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
                 {**self.coordinator.data.speaker, "speakerVolume": level}
             )
         )
+
+    # ----------------------------------------------------------------- browse
+    async def async_browse_media(
+        self,
+        media_content_type: str | None = None,
+        media_content_id: str | None = None,
+        **kwargs: object,
+    ) -> BrowseMedia:
+        """Expose Home Assistant's media sources through the speaker.
+
+        The media browser only lists players that advertise ``BROWSE_MEDIA``, so
+        this delegate is what makes the speaker selectable as a playback target
+        (e.g. to play a radio station or TTS on it).
+        """
+        return await media_source.async_browse_media(self.hass, media_content_id)
 
     # --------------------------------------------------------------- playback
     async def async_play_media(self, media_type: str, media_id: str, **kwargs: object) -> None:
