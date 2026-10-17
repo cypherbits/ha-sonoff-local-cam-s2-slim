@@ -62,7 +62,7 @@ them from `Onvif.GetConfig` once you are logged in with the admin password.
 
 1. In Home Assistant go to **HACS → Integrations**.
 2. Click the three-dot menu → **Custom repositories**.
-3. Add `https://github.com/your-github-username/ha-sonoff-local-cam-s2-slim`
+3. Add `https://github.com/cypherbits/ha-sonoff-local-cam-s2-slim`
    with category **Integration**.
 4. Find **SONOFF CAM-S2 (Local)** in HACS and click **Download**.
 5. Restart Home Assistant.
