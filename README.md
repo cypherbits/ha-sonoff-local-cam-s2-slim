@@ -20,6 +20,7 @@ inside `custom_components/sonoff_cam_local/sonoff_cam/`.
 | Platform | Entities |
 |---|---|
 | `camera` | Live RTSP stream (HLS/WebRTC through the `stream` integration) |
+| `media_player` | **Speaker** — play audio/TTS through the camera's speaker (local WebRTC) |
 | `binary_sensor` | Motion, Person detection — real-time via ONVIF |
 | `event` | Motion, Person — one event per detection (use in automations) |
 | `switch` | Motion detection, Person detection, Detect-all-motion, Motion schedule, Alarm armed, Alarm on motion, Alarm on person, Alarm schedule, Status LED, Watermark, Flip image, ONVIF, Automatic updates, WebSocket client |
@@ -203,6 +204,36 @@ stream (there is no separate snapshot endpoint on this firmware).
 * **Firmware** — reports the installed version, the changelog URL and any OTA
   update. Pressing **Install** triggers the vendor OTA (the camera downloads
   and installs from SONOFF's servers, then reboots). *Disabled by default.*
+
+### Speaker (`media_player`)
+
+* **Speaker** — plays audio through the camera's built-in speaker. Use
+  `media_player.play_media` (a URL or local file) or `tts.speak`. It is
+  **one-way playback** (announcements, TTS, sounds), not a live intercom — Home
+  Assistant does not capture a microphone for it.
+
+The stock firmware exposes **no** RPC/RTSP/ONVIF way to send audio (verified:
+`Alarm.*`/`Speaker.Play` answer `-103`, the RTSP server ignores the ONVIF
+backchannel `Require` header and `ANNOUNCE`/`RECORD`). The eWeLink app's two-way
+"Talk" uses the camera's **local WebRTC** endpoint (an Amazon Kinesis Video
+Streams peer), which its web console only uses with a `recvonly` audio track.
+The peer actually accepts a `sendrecv` **PCMA/8000** track, and that is what this
+entity uses.
+
+```yaml
+# TTS example
+action: tts.speak
+data:
+  entity_id: tts.home_assistant_cloud
+  media_player_entity_id: media_player.cam_s2_speaker
+  message: "Someone is at the front door"
+```
+
+> **Dependency note**: the WebRTC client uses
+> [`aiortc`](https://github.com/aiortc/aiortc). HA pins `av==19`, while the last
+> aiortc *release* caps `av<18`, so the manifest pins aiortc to a specific
+> `main` commit (which allows `av<20`). This will be switched to a released
+> version once one is available.
 
 ### Alarm / siren
 

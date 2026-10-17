@@ -205,6 +205,9 @@
       "motion": { "name": "Motion" },
       "person": { "name": "Person" }
     },
+    "media_player": {
+      "speaker": { "name": "Speaker" }
+    },
     "update": {
       "firmware": { "name": "Firmware" }
     }
