@@ -1,0 +1,110 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Conectar con un SONOFF CAM-S2",
+        "description": "Introduce la dirección IP de la cámara y su contraseña de administrador local (la que se usa para entrar en la consola web de la propia cámara).",
+        "data": {
+          "host": "Dirección",
+          "port": "Puerto",
+          "password": "Contraseña de administrador local"
+        },
+        "data_description": {
+          "host": "Dirección IP o nombre de host de la cámara.",
+          "port": "Puerto del servicio WebSocket JSON-RPC (por defecto 80).",
+          "password": "Déjalo vacío solo si la cámara no tiene contraseña de acceso configurada."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurar SONOFF CAM-S2",
+        "description": "Actualiza los datos de conexión de la cámara.",
+        "data": {
+          "host": "Dirección",
+          "port": "Puerto",
+          "password": "Contraseña de administrador local"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Volver a autenticar SONOFF CAM-S2",
+        "description": "La autenticación ha fallado. Introduce de nuevo la contraseña de administrador local de la cámara.",
+        "data": {
+          "password": "Contraseña de administrador local"
+        }
+      },
+      "dhcp": {
+        "title": "SONOFF CAM-S2 detectado",
+        "description": "Se ha encontrado una cámara SONOFF en tu red."
+      },
+      "dhcp_confirm": {
+        "title": "Confirma la cámara detectada",
+        "description": "Introduce la contraseña de administrador local para terminar de configurar la cámara detectada.",
+        "data": {
+          "password": "Contraseña de administrador local"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se pudo conectar con la cámara. Comprueba la dirección y que la cámara esté encendida.",
+      "invalid_auth": "Contraseña incorrecta. Aquí no se acepta la contraseña de RTSP; usa la contraseña de administrador local de la cámara.",
+      "password_required": "Esta cámara requiere la contraseña de administrador local.",
+      "unknown": "Error inesperado al comunicarse con la cámara."
+    },
+    "abort": {
+      "already_configured": "Esta cámara ya está configurada.",
+      "reauth_successful": "La reautenticación se ha completado correctamente.",
+      "reconfigure_successful": "La reconfiguración se ha completado correctamente.",
+      "cannot_connect": "No se pudo conectar con la cámara."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de SONOFF CAM-S2",
+        "data": {
+          "scan_interval": "Intervalo de sondeo",
+          "enable_onvif_motion": "Activar eventos de movimiento/persona por ONVIF"
+        },
+        "data_description": {
+          "scan_interval": "Cada cuánto se consulta el estado de la cámara.",
+          "enable_onvif_motion": "Suscríbete al servicio ONVIF de la cámara para detectar movimiento y personas en tiempo real. Requiere las credenciales de RTSP, que se leen automáticamente."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "motion": { "name": "Movimiento" },
+      "person": { "name": "Detección de personas" }
+    },
+    "switch": {
+      "motion_detection": { "name": "Detección de movimiento" },
+      "person_detection": { "name": "Detección de personas" },
+      "detect_all_motion": { "name": "Detectar todo movimiento" },
+      "status_led": { "name": "LED de estado" },
+      "night_vision": { "name": "Visión nocturna" },
+      "watermark": { "name": "Marca de agua en pantalla" },
+      "screen_flip": { "name": "Voltear imagen" },
+      "onvif": { "name": "ONVIF" },
+      "auto_update": { "name": "Actualizaciones automáticas de firmware" },
+      "websocket_client": { "name": "Cliente WebSocket" }
+    },
+    "number": {
+      "motion_sensitivity": { "name": "Sensibilidad de movimiento" },
+      "speaker_volume": { "name": "Volumen del altavoz" },
+      "microphone_volume": { "name": "Volumen del micrófono" }
+    },
+    "sensor": {
+      "wifi_signal": { "name": "Señal Wi-Fi" },
+      "wifi_network": { "name": "Red Wi-Fi" },
+      "uptime": { "name": "Tiempo encendido" },
+      "ram_free": { "name": "RAM libre" },
+      "viewers": { "name": "Espectadores activos" }
+    },
+    "button": {
+      "reboot": { "name": "Reiniciar" }
+    },
+    "update": {
+      "firmware": { "name": "Firmware" }
+    }
+  }
+}

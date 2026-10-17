@@ -1,0 +1,22 @@
+# Local test environment for the SONOFF CAM-S2 (Local) integration.
+#
+#   cd dev
+#   docker compose up -d
+#   # open http://localhost:8123 and complete onboarding
+#
+# The Home Assistant config lives in ./config (git-ignored). The integration is
+# bind-mounted straight from the repository, so code changes only need a
+# container restart (docker compose restart), not a rebuild.
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: ha-sonoff-cam-test
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Madrid
+    volumes:
+      - ./config:/config
+      - ../custom_components/sonoff_cam_local:/config/custom_components/sonoff_cam_local:ro
+    ports:
+      - "8123:8123"
