@@ -1,19 +1,16 @@
-"""Speaker entity: play audio / TTS through the camera's speaker.
+"""Speaker entity: play audio / TTS / radio through the camera's speaker.
 
 The audio is streamed to the camera over its local WebRTC endpoint (PCMA/8000),
 the same path the eWeLink app uses for two-way audio. This is one-way playback
-only (announcements, TTS, sounds) - it does not capture a microphone.
+only (announcements, TTS, sounds, internet radio) - it does not capture a mic.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
-from pathlib import Path
 from urllib.parse import urljoin
 
-import av
 from homeassistant.components import media_source
 from homeassistant.components.media_player import (
     BrowseMedia,
@@ -25,13 +22,12 @@ from homeassistant.components.media_player import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.network import get_url
 
 from .coordinator import SonoffCamCoordinator
 from .entity import SonoffCamEntity
-from .webrtc_audio import CameraAudioSession, decode_audio
+from .webrtc_audio import CameraAudioSession
 
 PARALLEL_UPDATES = 1
 
@@ -45,11 +41,6 @@ async def async_setup_entry(
 ) -> None:
     """Set up the speaker entity."""
     async_add_entities([SonoffCamSpeaker(entry.runtime_data)])
-
-
-async def _iter_frames(frames: list[av.AudioFrame]) -> AsyncIterator[av.AudioFrame]:
-    for frame in frames:
-        yield frame
 
 
 class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
@@ -108,13 +99,10 @@ class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
 
     # --------------------------------------------------------------- playback
     async def async_play_media(self, media_type: str, media_id: str, **kwargs: object) -> None:
-        """Play a media source (TTS, URL or local file) on the camera speaker."""
-        async with self._lock:
-            data = await self._fetch_media(media_id)
-            frames = await self.hass.async_add_executor_job(decode_audio, data)
-            if not frames:
-                raise HomeAssistantError("The media contains no decodable audio")
+        """Play a media source (radio, TTS, URL or file) on the camera speaker."""
+        source = await self._resolve_source(media_id)
 
+        async with self._lock:
             session = CameraAudioSession(self.coordinator.client.raw_call)
             try:
                 await session.start()
@@ -127,7 +115,9 @@ class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
             self._attr_state = MediaPlayerState.PLAYING
             self.async_write_ha_state()
             try:
-                await session.stream(_iter_frames(frames))
+                await session.stream_source(source)
+            except Exception as err:
+                raise HomeAssistantError(f"Playback failed: {err}") from err
             finally:
                 self._session = None
                 self._attr_state = MediaPlayerState.IDLE
@@ -136,45 +126,31 @@ class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
 
     async def async_media_stop(self) -> None:
         """Stop playback and tear down the WebRTC session."""
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
+        session, self._session = self._session, None
+        if session is not None:
+            await session.close()
         self._attr_state = MediaPlayerState.IDLE
         self.async_write_ha_state()
 
     # ---------------------------------------------------------------- helpers
-    async def _fetch_media(self, media_id: str) -> bytes:
-        """Resolve a media id to audio bytes."""
+    async def _resolve_source(self, media_id: str) -> str:
+        """Resolve a media id to a URL or local path usable by ffmpeg/PyAV."""
         url = media_id
         if media_id.startswith("media-source://"):
             resolved = await media_source.async_resolve_media(self.hass, media_id, self.entity_id)
             url = resolved.url
 
-        if url.startswith("http://") or url.startswith("https://"):
-            return await self._download(url)
-
-        if url.startswith("/"):
-            if url.startswith(("/api/", "/local/")):
-                base = get_url(self.hass, allow_internal=True, allow_ip=True)
-                return await self._download(urljoin(base, url))
-            if url.startswith("/local/"):
-                path = Path(self.hass.config.path("www", url[len("/local/") :]))
-                return await self._read_file(path)
-
+        if url.startswith(("http://", "https://", "rtsp://", "rtmp://")):
+            return url
         if url.startswith("file://"):
-            return await self._read_file(Path(url[len("file://") :]))
-        return await self._read_file(Path(url))
-
-    async def _download(self, url: str) -> bytes:
-        session = async_get_clientsession(self.hass)
-        async with session.get(url) as response:
-            response.raise_for_status()
-            return await response.read()
-
-    async def _read_file(self, path: Path) -> bytes:
-        def _read() -> bytes:
-            if not path.is_file():
-                raise HomeAssistantError(f"Media file not found: {path}")
-            return path.read_bytes()
-
-        return await self.hass.async_add_executor_job(_read)
+            return url[len("file://") :]
+        if url.startswith("/local/"):
+            return self.hass.config.path("www", url[len("/local/") :])
+        if url.startswith("/"):
+            try:
+                base = get_url(self.hass, allow_internal=True, allow_ip=True)
+            except HomeAssistantError:
+                base = None
+            if base is not None:
+                return urljoin(base, url)
+        return url

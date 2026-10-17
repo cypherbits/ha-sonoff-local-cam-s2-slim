@@ -60,17 +60,16 @@ async def test_play_media_opens_webrtc_session(hass: HomeAssistant) -> None:
     """play_media streams decoded audio through a WebRTC session."""
     await _setup(hass)
 
-    frames = [MagicMock(samples=960, sample_rate=48000)]
     session = MagicMock()
     session.start = AsyncMock()
-    session.stream = AsyncMock()
+    session.stream_source = AsyncMock()
     session.close = AsyncMock()
 
     with (
-        patch.object(SonoffCamSpeaker, "_fetch_media", AsyncMock(return_value=b"audio")),
-        patch(
-            "custom_components.sonoff_cam_local.media_player.decode_audio",
-            return_value=frames,
+        patch.object(
+            SonoffCamSpeaker,
+            "_resolve_source",
+            AsyncMock(return_value="http://example.com/radio.mp3"),
         ),
         patch(
             "custom_components.sonoff_cam_local.media_player.CameraAudioSession",
@@ -90,6 +89,6 @@ async def test_play_media_opens_webrtc_session(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     session.start.assert_awaited_once()
-    session.stream.assert_awaited_once()
+    session.stream_source.assert_awaited_once()
     session.close.assert_awaited_once()
     assert hass.states.get(ENTITY_ID).state == "idle"
