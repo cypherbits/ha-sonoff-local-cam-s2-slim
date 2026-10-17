@@ -1,0 +1,19 @@
+{
+  "domain": "sonoff_cam_local",
+  "name": "SONOFF CAM-S2 (Local)",
+  "codeowners": ["@your-github-username"],
+  "config_flow": true,
+  "dependencies": ["stream"],
+  "dhcp": [
+    {
+      "macaddress": "2CCC7A*"
+    }
+  ],
+  "documentation": "https://github.com/your-github-username/ha-sonoff-local-cam-s2-slim",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/your-github-username/ha-sonoff-local-cam-s2-slim/issues",
+  "quality_scale": "bronze",
+  "requirements": ["websockets>=12.0"],
+  "version": "1.0.0"
+}

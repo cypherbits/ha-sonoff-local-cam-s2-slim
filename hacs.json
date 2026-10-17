@@ -1,0 +1,6 @@
+{
+  "name": "SONOFF CAM-S2 (Local)",
+  "render_readme": true,
+  "homeassistant": "2025.1.0",
+  "zip_release": false
+}
