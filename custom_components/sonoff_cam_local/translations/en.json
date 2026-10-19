@@ -2,7 +2,11 @@
   "config": {
     "step": {
       "user": {
-        "title": "Add a SONOFF CAM-S2"
+        "title": "Add a SONOFF CAM-S2",
+        "menu_options": {
+          "manual": "Set up manually",
+          "scan": "Scan the network"
+        }
       },
       "manual": {
         "title": "Connect to a SONOFF CAM-S2",
