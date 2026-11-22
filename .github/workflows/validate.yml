@@ -43,7 +43,11 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libturbojpeg
+        run: |
+          sudo apt-get update
+          # The binary package is libturbojpeg0 on newer Ubuntu and
+          # libturbojpeg on 24.04.
+          sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
