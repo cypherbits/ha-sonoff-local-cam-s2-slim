@@ -10,9 +10,11 @@ dependencies = ["websockets>=12.0"]
 [project.optional-dependencies]
 dev = [
     "aiortc>=1.16.0",
+    "PyTurboJPEG",
     "pytest>=9.0",
     "pytest-homeassistant-custom-component",
     "ruff>=0.6",
+    "websockets>=12.0",
 ]
 
 [tool.ruff]
