@@ -1,6 +1,7 @@
 {
   "domain": "sonoff_cam_local",
   "name": "SONOFF CAM-S2 (Local)",
+  "categories": ["security_safety.cameras"],
   "codeowners": ["@cypherbits"],
   "config_flow": true,
   "dependencies": ["stream"],
@@ -13,7 +14,6 @@
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/cypherbits/ha-sonoff-local-cam-s2-slim/issues",
-  "quality_scale": "silver",
   "requirements": [
     "websockets>=12.0",
     "aiortc>=1.16.0"

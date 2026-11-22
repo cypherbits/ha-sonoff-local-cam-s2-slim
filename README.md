@@ -1,7 +1,8 @@
 # SONOFF CAM-S2 (Local) — Home Assistant integration
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
+[![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=cypherbits&repository=ha-sonoff-local-cam-s2-slim&category=integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Validate](https://github.com/cypherbits/ha-sonoff-local-cam-s2-slim/actions/workflows/validate.yml/badge.svg)](https://github.com/cypherbits/ha-sonoff-local-cam-s2-slim/actions/workflows/validate.yml)
 
 A **local-only** Home Assistant integration for the **SONOFF CAM-S2 / CAM Slim
 Gen2** camera running **stock firmware**. It talks straight to the camera over
@@ -9,9 +10,11 @@ your LAN using the camera's own WebSocket JSON-RPC service (and ONVIF for
 motion/people events). No SONOFF cloud, no eWeLink account and no internet
 connection are required at runtime.
 
-This integration bundles a copy of the reverse-engineered
-[`sonoff-cam`](https://github.com/) client library, so the protocol details live
-inside `custom_components/sonoff_cam_local/sonoff_cam/`.
+This integration bundles a copy of the reverse-engineered `sonoff-cam` client
+library, so the protocol details live inside
+`custom_components/sonoff_cam_local/sonoff_cam/`.
+
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=sonoff_cam_local)
 
 ---
 
@@ -65,7 +68,19 @@ them from `Onvif.GetConfig` once you are logged in with the admin password.
 
 ## Installation
 
-### HACS (recommended)
+### Marketplace (Home Assistant 2026.11 and newer)
+
+1. Go to **Settings → Marketplace**.
+2. Search for **SONOFF CAM-S2 (Local)** and select **Install**.
+3. Go to **Settings → Devices & Services → Add Integration** and add
+   **SONOFF CAM-S2 (Local)**.
+
+Once the integration is in the Marketplace catalog it appears in the search
+results. Until then, use the Marketplace badge at the top of this page (or add
+`https://github.com/cypherbits/ha-sonoff-local-cam-s2-slim` as a custom
+repository) and install it from there.
+
+### HACS (Home Assistant 2026.10 and older)
 
 1. In Home Assistant go to **HACS → Integrations**.
 2. Click the three-dot menu → **Custom repositories**.
