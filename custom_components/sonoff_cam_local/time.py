@@ -49,12 +49,9 @@ def _ota_parts(time_str: Any) -> tuple[time, time]:
 
 
 def _set_ota_edge(coordinator: SonoffCamCoordinator, value: time, *, start: bool) -> Coroutine:
-    config = dict(coordinator.data.ota_config.get("config") or {})
-    current_start, current_end = _ota_parts(config.get("time"))
-    begin = value if start else current_start
-    finish = current_end if start else value
-    config["time"] = f"{_fmt(begin)}-{_fmt(finish)}"
-    return coordinator.client.set_ota_config(config)
+    if start:
+        return coordinator.client.set_ota_window(start=_fmt(value))
+    return coordinator.client.set_ota_window(end=_fmt(value))
 
 
 @dataclass(frozen=True, kw_only=True)

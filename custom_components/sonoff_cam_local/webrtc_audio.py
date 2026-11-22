@@ -17,9 +17,12 @@ import asyncio
 import contextlib
 import logging
 import random
+import subprocess
+import sys
 import time
 import warnings
 from collections.abc import Callable, Coroutine, Iterator
+from fractions import Fraction
 from typing import Any
 
 import av
@@ -38,52 +41,116 @@ LIVE_STREAM_SET_CONFIG = "LiveStream.SetConfig"
 RpcCall = Callable[[str, dict[str, Any] | None], Coroutine[Any, Any, dict[str, Any]]]
 
 #: PCMA/8000 is a 20 ms frame of 160 samples; decoded audio is resampled to 48 kHz.
-_FRAME_SAMPLES = 160
-_SAMPLE_RATE = 8000
 _TARGET_RATE = 48000
+_TARGET_FRAME_SAMPLES = 960  # 20 ms at 48 kHz
+_SAMPLE_WIDTH = 2  # s16 mono
+
+#: Run the decoder in a child process. PyAV/FFmpeg crashes then kill only the
+#: decoder, not Home Assistant itself.
+_DECODER_SCRIPT = r"""
+import sys
+import av
+
+source = sys.argv[1]
+container = av.open(source)
+try:
+    if not container.streams.audio:
+        raise SystemExit("media contains no audio stream")
+    stream = container.streams.audio[0]
+    resampler = av.AudioResampler(format="s16", layout="mono", rate=48000)
+    out = sys.stdout.buffer
+    for frame in container.decode(stream):
+        for resampled in resampler.resample(frame):
+            out.write(bytes(resampled.planes[0])[: resampled.samples * 2])
+            out.flush()
+    for resampled in resampler.resample(None):
+        out.write(bytes(resampled.planes[0])[: resampled.samples * 2])
+        out.flush()
+finally:
+    container.close()
+"""
 
 
 def _silence() -> av.AudioFrame:
-    frame = av.AudioFrame(format="s16", layout="mono", samples=_FRAME_SAMPLES)
-    frame.sample_rate = _SAMPLE_RATE
+    frame = av.AudioFrame(
+        format="s16", layout="mono", samples=_TARGET_FRAME_SAMPLES
+    )
+    frame.sample_rate = _TARGET_RATE
+    frame.time_base = Fraction(1, _TARGET_RATE)
+    return frame
+
+
+def _frame_from_bytes(data: bytes) -> av.AudioFrame:
+    frame = av.AudioFrame(
+        format="s16", layout="mono", samples=_TARGET_FRAME_SAMPLES
+    )
+    frame.sample_rate = _TARGET_RATE
+    frame.time_base = Fraction(1, _TARGET_RATE)
+    frame.planes[0].update(data)
     return frame
 
 
 class AudioSourceStreamer:
-    """Blocking decoder for a URL / file, yielding mono s16 48 kHz frames."""
+    """Decode a URL / file in a child process, yielding 20 ms s16 48 kHz frames."""
 
     def __init__(self, source: str) -> None:
         self._source = source
-        self._container: av.container.InputContainer | None = None
+        self._process: subprocess.Popen[bytes] | None = None
         self._closed = False
 
     def frames(self) -> Iterator[av.AudioFrame]:
         """Yield resampled frames until the source ends or :meth:`close` is called."""
-        container = av.open(self._source)
-        self._container = container
+        frame_bytes = _TARGET_FRAME_SAMPLES * _SAMPLE_WIDTH
+        process = subprocess.Popen(
+            [sys.executable, "-c", _DECODER_SCRIPT, self._source],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=0,
+        )
+        self._process = process
+        stdout = process.stdout
+        assert stdout is not None
+        buffer = bytearray()
         try:
-            if not container.streams.audio:
-                raise ValueError("media contains no audio stream")
-            stream = container.streams.audio[0]
-            resampler = av.AudioResampler(format="s16", layout="mono", rate=_TARGET_RATE)
-            for frame in container.decode(stream):
-                if self._closed:
+            while not self._closed:
+                chunk = stdout.read(4096)
+                if not chunk:
                     break
-                for resampled in resampler.resample(frame):
-                    yield resampled
-            if not self._closed:
-                for resampled in resampler.resample(None):
-                    yield resampled
+                buffer.extend(chunk)
+                while len(buffer) >= frame_bytes:
+                    data = bytes(buffer[:frame_bytes])
+                    del buffer[:frame_bytes]
+                    yield _frame_from_bytes(data)
+            if not self._closed and buffer:
+                data = bytes(buffer) + b"\x00" * (frame_bytes - len(buffer))
+                yield _frame_from_bytes(data)
         finally:
-            # Closed here (decoder thread), never from the event loop: closing a
-            # container while another thread is inside decode() can crash ffmpeg.
-            self._container = None
+            self._process = None
+            closed_by_us = self._closed
             with contextlib.suppress(Exception):
-                container.close()
+                stdout.close()
+            if process.poll() is None:
+                if closed_by_us:
+                    process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.terminate()
+                    with contextlib.suppress(Exception):
+                        process.wait(timeout=2)
+            if process.returncode not in (0, None) and not closed_by_us:
+                _LOGGER.warning(
+                    "Audio decoder for %s exited with code %s",
+                    self._source,
+                    process.returncode,
+                )
 
     def close(self) -> None:
         """Ask the decoder to stop after the current frame."""
         self._closed = True
+        process, self._process = self._process, None
+        if process is not None and process.poll() is None:
+            process.terminate()
 
 
 class CameraAudioTrack(MediaStreamTrack):
@@ -109,10 +176,13 @@ class CameraAudioTrack(MediaStreamTrack):
         """Return the next queued frame, or a silence frame when idle.
 
         The producer paces the queue in real time, so no extra sleeping is done
-        here - that would halve the effective bitrate on live sources.
+        for normal playback. When playback has ended, silence is paced at 20 ms
+        so the sender cannot spin at full speed.
         """
         frame: av.AudioFrame | None = None
-        if not (self._ended and self._queue.empty()):
+        if self._ended and self._queue.empty():
+            await asyncio.sleep(_TARGET_FRAME_SAMPLES / _TARGET_RATE)
+        else:
             try:
                 frame = await asyncio.wait_for(self._queue.get(), timeout=0.5)
             except TimeoutError:
@@ -138,65 +208,74 @@ class CameraAudioSession:
     async def start(self) -> None:
         """Negotiate the WebRTC session and wait for it to connect."""
         pc = RTCPeerConnection()
-        pc.addTransceiver("video", direction="recvonly")
         track = CameraAudioTrack()
-        pc.addTrack(track)
+        try:
+            pc.addTransceiver("video", direction="recvonly")
+            pc.addTrack(track)
 
-        @pc.on("icecandidate")
-        async def _on_ice(candidate: Any) -> None:
-            if candidate is None:
-                return
+            @pc.on("icecandidate")
+            async def _on_ice(candidate: Any) -> None:
+                if candidate is None:
+                    return
+                try:
+                    await self._rpc(
+                        WEBRTC_SET_CONFIG,
+                        {
+                            "sessionId": self._session_id,
+                            "msgType": "ice",
+                            "data": {
+                                "candidate": candidate.candidate,
+                                "sdpMid": candidate.sdpMid or "0",
+                                "sdpMLineIndex": candidate.sdpMLineIndex or 0,
+                            },
+                        },
+                    )
+                except Exception as err:
+                    _LOGGER.debug("WebRTC ICE send failed: %s", err)
+
+            offer = await pc.createOffer()
+            await pc.setLocalDescription(offer)
+            assert pc.localDescription is not None
+
+            result = await self._rpc(
+                WEBRTC_SET_CONFIG,
+                {
+                    "sessionId": self._session_id,
+                    "msgType": "sdp",
+                    "data": {"type": "offer", "sdp": pc.localDescription.sdp},
+                },
+            )
+            data = result.get("data") or {}
+            if data.get("type") != "answer" or not data.get("sdp"):
+                raise RuntimeError("camera did not return a WebRTC answer")
+
+            await pc.setRemoteDescription(
+                RTCSessionDescription(sdp=data["sdp"], type="answer")
+            )
             try:
                 await self._rpc(
-                    WEBRTC_SET_CONFIG,
-                    {
-                        "sessionId": self._session_id,
-                        "msgType": "ice",
-                        "data": {
-                            "candidate": candidate.candidate,
-                            "sdpMid": candidate.sdpMid or "0",
-                            "sdpMLineIndex": candidate.sdpMLineIndex or 0,
-                        },
-                    },
+                    LIVE_STREAM_SET_CONFIG,
+                    {"sessionId": self._session_id, "action": "playMedia"},
                 )
             except Exception as err:
-                _LOGGER.debug("WebRTC ICE send failed: %s", err)
+                _LOGGER.debug("playMedia failed: %s", err)
 
-        offer = await pc.createOffer()
-        await pc.setLocalDescription(offer)
-        assert pc.localDescription is not None
+            self._pc = pc
+            self._track = track
 
-        result = await self._rpc(
-            WEBRTC_SET_CONFIG,
-            {
-                "sessionId": self._session_id,
-                "msgType": "sdp",
-                "data": {"type": "offer", "sdp": pc.localDescription.sdp},
-            },
-        )
-        data = result.get("data") or {}
-        if data.get("type") != "answer" or not data.get("sdp"):
+            for _ in range(40):
+                if pc.connectionState in ("connected", "failed", "closed"):
+                    break
+                await asyncio.sleep(0.25)
+            if pc.connectionState in ("failed", "closed"):
+                raise RuntimeError(f"WebRTC session state is {pc.connectionState}")
+            if pc.connectionState != "connected":
+                _LOGGER.warning("WebRTC audio session state is %s", pc.connectionState)
+        except Exception:
+            self._pc = None
+            self._track = None
             await pc.close()
-            raise RuntimeError("camera did not return a WebRTC answer")
-
-        await pc.setRemoteDescription(RTCSessionDescription(sdp=data["sdp"], type="answer"))
-        try:
-            await self._rpc(
-                LIVE_STREAM_SET_CONFIG,
-                {"sessionId": self._session_id, "action": "playMedia"},
-            )
-        except Exception as err:
-            _LOGGER.debug("playMedia failed: %s", err)
-
-        self._pc = pc
-        self._track = track
-
-        for _ in range(40):
-            if pc.connectionState in ("connected", "failed", "closed"):
-                break
-            await asyncio.sleep(0.25)
-        if pc.connectionState != "connected":
-            _LOGGER.warning("WebRTC audio session state is %s", pc.connectionState)
+            raise
 
     async def stream_source(self, source: str) -> None:
         """Decode ``source`` (URL or file) and stream it in real time.
@@ -244,6 +323,8 @@ class CameraAudioSession:
             self._streamer = None
         if self._track is not None:
             self._track.end()
+            self._track.stop()
+            self._track = None
         if self._pc is not None:
             await self._pc.close()
             self._pc = None

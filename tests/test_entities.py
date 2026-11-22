@@ -87,7 +87,14 @@ async def test_event_entity_fires(hass: HomeAssistant) -> None:
     """A detection bus event updates the matching event entity."""
     await _setup(hass)
 
-    hass.bus.async_fire("sonoff_cam_local_detection", {"device_id": DEVICE_ID, "type": "motion"})
+    hass.bus.async_fire(
+        "sonoff_cam_local_detection",
+        {
+            "device_id": "ha-device-id",
+            "native_device_id": DEVICE_ID,
+            "type": "motion",
+        },
+    )
     await hass.async_block_till_done()
 
     state = hass.states.get("event.cam_s2_motion")

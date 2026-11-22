@@ -8,7 +8,8 @@ DOMAIN: Final = "sonoff_cam_local"
 MANUFACTURER: Final = "SONOFF"
 
 #: Bus event fired on every motion/person detection (used by device triggers
-#: and the event entities). Data: ``{"device_id": str, "type": "motion"|"person"}``.
+#: and the event entities). Data: ``{"device_id": <HA registry id>,
+#: "native_device_id": <camera id>, "type": "motion"|"person"}``.
 EVENT_DETECTION: Final = f"{DOMAIN}_detection"
 
 # --- Configuration keys -----------------------------------------------------
@@ -39,3 +40,11 @@ ONVIF_SUBSCRIPTION_LIFETIME: Final = "PT900S"
 ONVIF_PULL_TIMEOUT: Final = "PT5S"
 ONVIF_PULL_MESSAGE_LIMIT: Final = 32
 ONVIF_RECONNECT_DELAY: Final = 15
+ONVIF_MAX_RECONNECT_DELAY: Final = 300
+#: The ONVIF service always listens on the camera's HTTP port (80), even when
+#: the JSON-RPC port has been changed.
+ONVIF_PORT: Final = 80
+
+# --- Detection state --------------------------------------------------------
+#: Safety net: clear a motion/person state if no matching "off" event arrives.
+DETECTION_TIMEOUT: Final = 60

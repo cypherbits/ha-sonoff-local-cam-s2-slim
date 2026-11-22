@@ -46,9 +46,7 @@ NUMBERS: tuple[SonoffCamNumberDescription, ...] = (
     SonoffCamNumberDescription(
         key="speaker_volume",
         value_fn=lambda c: float(c.data.speaker.get("speakerVolume", 0) or 0),
-        set_fn=lambda c, v: c.client.set_speaker_config(
-            {**c.data.speaker, "speakerVolume": int(v)}
-        ),
+        set_fn=lambda c, v: c.client.set_speaker_volume(int(v)),
         icon="mdi:volume-high",
         native_min_value=0,
         native_max_value=100,
@@ -58,9 +56,7 @@ NUMBERS: tuple[SonoffCamNumberDescription, ...] = (
     SonoffCamNumberDescription(
         key="microphone_volume",
         value_fn=lambda c: float(c.data.microphone.get("microphoneVolume", 0) or 0),
-        set_fn=lambda c, v: c.client.set_microphone_config(
-            {**c.data.microphone, "microphoneVolume": int(v)}
-        ),
+        set_fn=lambda c, v: c.client.set_microphone_volume(int(v)),
         icon="mdi:microphone",
         native_min_value=0,
         native_max_value=100,

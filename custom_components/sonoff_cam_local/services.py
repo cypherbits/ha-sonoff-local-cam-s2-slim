@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
@@ -35,15 +35,29 @@ def _entry_for_device(hass: HomeAssistant, device_id: str) -> ConfigEntry | None
     device = registry.async_get(device_id)
     if device is None:
         return None
-    for entry_id in device.config_entries:
+    if hasattr(device, "config_entry_id"):
+        entry_ids = (device.config_entry_id,)
+    else:
+        entry_ids = tuple(device.config_entries)
+    for entry_id in entry_ids:
         entry = hass.config_entries.async_get_entry(entry_id)
-        if entry is not None and entry.domain == DOMAIN:
+        if (
+            entry is not None
+            and entry.domain == DOMAIN
+            and entry.state is ConfigEntryState.LOADED
+            and getattr(entry, "runtime_data", None) is not None
+        ):
             return entry
     return None
 
 
 def _single_entry(hass: HomeAssistant) -> ConfigEntry | None:
-    entries = hass.config_entries.async_entries(DOMAIN)
+    entries = [
+        entry
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state is ConfigEntryState.LOADED
+        and getattr(entry, "runtime_data", None) is not None
+    ]
     return entries[0] if len(entries) == 1 else None
 
 
@@ -74,3 +88,10 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         hass.services.async_register(
             DOMAIN, SERVICE_TRIGGER_ALARM, _async_trigger_alarm, schema=TRIGGER_ALARM_SCHEMA
         )
+
+
+def async_unregister_services(hass: HomeAssistant) -> None:
+    """Remove the integration services when the last entry is unloaded."""
+    for service in (SERVICE_SET_WIFI, SERVICE_TRIGGER_ALARM):
+        if hass.services.has_service(DOMAIN, service):
+            hass.services.async_remove(DOMAIN, service)

@@ -33,7 +33,7 @@ async def async_get_triggers(hass: HomeAssistant, device_id: str) -> list[dict[s
     """Return the detection triggers for a camera device."""
     registry = dr.async_get(hass)
     device = registry.async_get(device_id)
-    if device is None or DOMAIN not in device.config_entries:
+    if device is None or not _device_belongs_to_integration(hass, device):
         return []
     return [
         {
@@ -44,6 +44,18 @@ async def async_get_triggers(hass: HomeAssistant, device_id: str) -> list[dict[s
         }
         for trigger in TRIGGER_TYPES
     ]
+
+
+def _device_belongs_to_integration(hass: HomeAssistant, device: dr.DeviceEntry) -> bool:
+    """Return whether the device is owned by this integration."""
+    if hasattr(device, "config_entry_id"):
+        entry = hass.config_entries.async_get_entry(device.config_entry_id)
+        return entry is not None and entry.domain == DOMAIN
+    for entry_id in device.config_entries:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is not None and entry.domain == DOMAIN:
+            return True
+    return False
 
 
 async def async_attach_trigger(

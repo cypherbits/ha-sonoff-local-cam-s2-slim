@@ -25,6 +25,7 @@ Example
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 from .exceptions import NotSupported
@@ -43,6 +44,8 @@ from .models import (
 from .rpc import NotificationHandler, RpcClient
 
 MotionLike = Union[MotionConfig, Dict[str, Any], None]
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class SonoffCamera:
@@ -105,7 +108,28 @@ class SonoffCamera:
         return await self.rpc.call(Method.SYSTEM_GET_CONFIG)
 
     async def set_system_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.rpc.call(Method.SYSTEM_SET_CONFIG, config)
+        """Write the system configuration (``System.SetConfig``).
+
+        ``System.GetConfig`` returns ``{"config": {...}}``; the setter expects
+        the same wrapper.  Callers pass the inner configuration dictionary.
+        """
+        return await self.rpc.call(Method.SYSTEM_SET_CONFIG, {"config": config})
+
+    async def set_ntp_server(self, server: str, *, primary: bool) -> Dict[str, Any]:
+        """Set one NTP server using a fresh read-modify-write."""
+        current = await self.get_system_config()
+        config = dict(current.get("config") or {})
+        sntp = dict(config.get("sntp") or {})
+        sntp["server1" if primary else "server2"] = server
+        config["sntp"] = sntp
+        return await self.set_system_config(config)
+
+    async def set_local_domain(self, domain: str) -> Dict[str, Any]:
+        """Set the local mDNS domain using a fresh read-modify-write."""
+        current = await self.get_system_config()
+        config = dict(current.get("config") or {})
+        config["domain"] = domain
+        return await self.set_system_config(config)
 
     async def control(self, action: str, value: Any = None) -> Dict[str, Any]:
         """``System.Control`` (e.g. ``action="reboot"``).
@@ -259,10 +283,11 @@ class SonoffCamera:
         helper generates that motion by briefly flipping the image
         (``Screen.SetConfig screenFlip``), which reproduces every time.
 
-        Side effects: the image is flipped for ~1.5 s and the ``screenFlip``
-        change makes the camera emit its usual ONVIF motion events. The original
-        ``Alarm.GetConfig`` and ``Screen.GetConfig`` are restored in a
-        ``finally`` block, so a failure can never leave the camera armed.
+        Side effects: the image is flipped for the duration of the alarm and the
+        ``screenFlip`` change makes the camera emit its usual ONVIF motion
+        events. The original ``Alarm.GetConfig`` and ``Screen.GetConfig`` are
+        restored on a best-effort basis; each restore is attempted even if the
+        other one fails.
         """
         original_alarm = await self.get_alarm_config()
         original_screen = await self.get_screen_config()
@@ -281,18 +306,28 @@ class SonoffCamera:
         }
 
         def flip(value: bool) -> Dict[str, Any]:
-            return {
-                "watermarkDisplay": original_screen.watermark_display,
-                "screenFlip": value,
-            }
+            # Preserve any other Screen fields the firmware may expose.
+            payload = dict(original_screen.raw)
+            payload["watermarkDisplay"] = original_screen.watermark_display
+            payload["screenFlip"] = value
+            return payload
 
+        # Toggle to the opposite state so the image always changes, even when
+        # the user has already enabled "Flip image".
+        trigger_flip = not original_screen.screen_flip
         try:
             await self.rpc.call(Method.ALARM_SET_CONFIG, staged)
-            await self.rpc.call(Method.SCREEN_SET_CONFIG, flip(True))
+            await self.rpc.call(Method.SCREEN_SET_CONFIG, flip(trigger_flip))
             await asyncio.sleep(max(1, int(duration)) + 0.5)
         finally:
-            await self.rpc.call(Method.SCREEN_SET_CONFIG, flip(original_screen.screen_flip))
-            await self.rpc.call(Method.ALARM_SET_CONFIG, original_alarm.to_params())
+            try:
+                await self.rpc.call(Method.SCREEN_SET_CONFIG, flip(original_screen.screen_flip))
+            except Exception:  # noqa: BLE001 - best effort restore
+                _LOGGER.exception("Could not restore the camera screen configuration")
+            try:
+                await self.rpc.call(Method.ALARM_SET_CONFIG, original_alarm.to_params())
+            except Exception:  # noqa: BLE001 - best effort restore
+                _LOGGER.exception("Could not restore the camera alarm configuration")
 
     # ------------------------------------------------------------- night vision
     async def get_night_vision_config(self) -> NightVisionConfig:
@@ -315,12 +350,30 @@ class SonoffCamera:
     async def set_screen_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         return await self.rpc.call(Method.SCREEN_SET_CONFIG, config)
 
+    async def set_screen_fields(self, **updates: Any) -> Dict[str, Any]:
+        """Update one or more ``Screen.SetConfig`` fields without losing the rest."""
+        current = await self.rpc.call(Method.SCREEN_GET_CONFIG)
+        current.update(updates)
+        return await self.set_screen_config(current)
+
     # ------------------------------------------------------------------- onvif
     async def get_onvif_config(self) -> OnvifConfig:
         return OnvifConfig.from_result(await self.rpc.call(Method.ONVIF_GET_CONFIG))
 
     async def set_onvif_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         return await self.rpc.call(Method.ONVIF_SET_CONFIG, config)
+
+    async def set_onvif_enabled(self, enabled: bool) -> Dict[str, Any]:
+        """Enable/disable ONVIF without clobbering credentials/resolution."""
+        current = await self.rpc.call(Method.ONVIF_GET_CONFIG)
+        payload = {
+            "user": current.get("user", ""),
+            "password": current.get("password", ""),
+            "enable": enabled,
+            "rtspResolution": current.get("rtspResolution", "1080P"),
+        }
+        await self.set_onvif_config(payload)
+        return await self.get_onvif_config()
 
     async def set_rtsp_resolution(self, resolution: str) -> OnvifConfig:
         """Set the RTSP/ONVIF stream resolution (``"1080P"`` or ``"360P"``).
@@ -345,6 +398,12 @@ class SonoffCamera:
     async def set_led_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         return await self.rpc.call(Method.SLED_SET_CONFIG, config)
 
+    async def set_led_enabled(self, enabled: bool) -> Dict[str, Any]:
+        """Enable/disable the status LED using a fresh read-modify-write."""
+        current = await self.get_led_config()
+        current["enable"] = enabled
+        return await self.set_led_config(current)
+
     # ------------------------------------------------------------------ audio
     async def get_speaker_config(self) -> Dict[str, Any]:
         return await self.rpc.call(Method.SPEAKER_GET_CONFIG)
@@ -357,6 +416,18 @@ class SonoffCamera:
 
     async def set_microphone_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         return await self.rpc.call(Method.MICROPHONE_SET_CONFIG, config)
+
+    async def set_speaker_volume(self, volume: int) -> Dict[str, Any]:
+        """Set the speaker volume using a fresh read-modify-write."""
+        current = await self.get_speaker_config()
+        current["speakerVolume"] = max(0, min(100, int(volume)))
+        return await self.set_speaker_config(current)
+
+    async def set_microphone_volume(self, volume: int) -> Dict[str, Any]:
+        """Set the microphone volume using a fresh read-modify-write."""
+        current = await self.get_microphone_config()
+        current["microphoneVolume"] = max(0, min(100, int(volume)))
+        return await self.set_microphone_config(current)
 
     # -------------------------------------------------------------------- wifi
     async def wifi_status(self) -> Dict[str, Any]:
@@ -375,11 +446,18 @@ class SonoffCamera:
 
         This drops the camera off its current network and reconnects to ``ssid``;
         if the credentials are wrong the camera becomes unreachable over Wi-Fi.
+        The payload matches the camera web console (``ap`` is intentionally
+        empty so the AP configuration is left untouched).
         """
         payload = {
             "config": {
                 "ap": {},
-                "sta": {"enable": enable, "ssid": ssid, "pass": password, "ipv4mode": "dhcp"},
+                "sta": {
+                    "enable": enable,
+                    "ssid": ssid,
+                    "pass": password,
+                    "ipv4mode": "dhcp",
+                },
             }
         }
         return await self.rpc.call(Method.WIFI_SET_CONFIG, payload)
@@ -399,6 +477,30 @@ class SonoffCamera:
     async def set_ota_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update OTA settings (``Ota.SetConfig``); ``config`` is merged in full."""
         return await self.rpc.call(Method.OTA_SET_CONFIG, {"config": config})
+
+    async def set_ota_auto(self, auto: bool) -> Dict[str, Any]:
+        """Enable/disable automatic OTA updates (read-modify-write)."""
+        current = await self.get_ota_config()
+        config = dict(current.get("config") or {})
+        config["auto"] = auto
+        return await self.set_ota_config(config)
+
+    async def set_ota_window(self, *, start: str | None = None, end: str | None = None) -> Dict[str, Any]:
+        """Update the OTA maintenance window (read-modify-write)."""
+        current = await self.get_ota_config()
+        config = dict(current.get("config") or {})
+        current_time = str(config.get("time") or "2:00-4:00")
+        left, _, right = current_time.partition("-")
+        config["time"] = f"{start or left or '2:00'}-{end or right or '4:00'}"
+        return await self.set_ota_config(config)
+
+    async def set_websocket_client_enabled(self, enabled: bool) -> Dict[str, Any]:
+        """Enable/disable the camera's outbound WebSocket client."""
+        current = await self.raw_call("WebSocket.GetConfig")
+        config = dict(current.get("config") or {})
+        config["enable"] = enabled
+        current["config"] = config
+        return await self.raw_call("WebSocket.SetConfig", current)
 
     async def start_ota_update(self, *, auto: bool = False, window: str = "2:00-4:00") -> Dict[str, Any]:
         """Ask the camera to check for and install a firmware update over the air."""

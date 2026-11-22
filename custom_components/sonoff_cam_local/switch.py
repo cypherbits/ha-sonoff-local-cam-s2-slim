@@ -24,14 +24,6 @@ PARALLEL_UPDATES = 0
 _SetFn = Callable[[SonoffCamCoordinator, bool], Coroutine[Any, Any, Any]]
 
 
-def _merge(original: dict[str, Any], **updates: Any) -> dict[str, Any]:
-    return {**original, **updates}
-
-
-def _nested(base: dict[str, Any], section: str, **updates: Any) -> dict[str, Any]:
-    return {**base, section: {**(base.get(section) or {}), **updates}}
-
-
 @dataclass(frozen=True, kw_only=True)
 class SonoffCamSwitchDescription(SwitchEntityDescription):
     """Description of a boolean camera setting."""
@@ -100,22 +92,20 @@ SWITCHES: tuple[SonoffCamSwitchDescription, ...] = (
     SonoffCamSwitchDescription(
         key="status_led",
         value_fn=lambda c: bool(c.data.led.get("enable")),
-        set_fn=lambda c, v: c.client.set_led_config(_merge(c.data.led, enable=v)),
+        set_fn=lambda c, v: c.client.set_led_enabled(v),
         icon="mdi:led-on",
     ),
     SonoffCamSwitchDescription(
         key="watermark",
         value_fn=lambda c: c.data.screen.watermark_display,
-        set_fn=lambda c, v: c.client.set_screen_config(
-            _merge(c.data.screen.raw, watermarkDisplay=v)
-        ),
+        set_fn=lambda c, v: c.client.set_screen_fields(watermarkDisplay=v),
         icon="mdi:watermark",
         entity_category=EntityCategory.CONFIG,
     ),
     SonoffCamSwitchDescription(
         key="screen_flip",
         value_fn=lambda c: c.data.screen.screen_flip,
-        set_fn=lambda c, v: c.client.set_screen_config(_merge(c.data.screen.raw, screenFlip=v)),
+        set_fn=lambda c, v: c.client.set_screen_fields(screenFlip=v),
         icon="mdi:flip-horizontal",
         entity_category=EntityCategory.CONFIG,
         enabled_default=False,
@@ -123,7 +113,7 @@ SWITCHES: tuple[SonoffCamSwitchDescription, ...] = (
     SonoffCamSwitchDescription(
         key="onvif",
         value_fn=lambda c: c.data.onvif.enabled,
-        set_fn=lambda c, v: c.client.set_onvif_config(_merge(c.data.onvif_raw, enable=v)),
+        set_fn=lambda c, v: c.client.set_onvif_enabled(v),
         icon="mdi:access-point-network",
         device_class=SwitchDeviceClass.SWITCH,
         entity_category=EntityCategory.CONFIG,
@@ -131,9 +121,7 @@ SWITCHES: tuple[SonoffCamSwitchDescription, ...] = (
     SonoffCamSwitchDescription(
         key="auto_update",
         value_fn=lambda c: bool((c.data.ota_config.get("config") or {}).get("auto")),
-        set_fn=lambda c, v: c.client.raw_call(
-            "Ota.SetConfig", _nested(c.data.ota_config, "config", auto=v)
-        ),
+        set_fn=lambda c, v: c.client.set_ota_auto(v),
         icon="mdi:update",
         entity_category=EntityCategory.CONFIG,
         enabled_default=False,
@@ -141,9 +129,7 @@ SWITCHES: tuple[SonoffCamSwitchDescription, ...] = (
     SonoffCamSwitchDescription(
         key="websocket_client",
         value_fn=lambda c: bool((c.data.websocket.get("config") or {}).get("enable")),
-        set_fn=lambda c, v: c.client.raw_call(
-            "WebSocket.SetConfig", _nested(c.data.websocket, "config", enable=v)
-        ),
+        set_fn=lambda c, v: c.client.set_websocket_client_enabled(v),
         icon="mdi:web",
         entity_category=EntityCategory.CONFIG,
         enabled_default=False,

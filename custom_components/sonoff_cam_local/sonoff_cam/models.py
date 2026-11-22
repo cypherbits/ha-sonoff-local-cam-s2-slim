@@ -83,13 +83,17 @@ class EffectiveSchedule:
 
     def to_params(self) -> Dict[str, Any]:
         """Serialise back into the ``effective`` shape accepted by the device."""
-        return {
-            "enable": 1 if self.enabled else 0,
-            "from": self.start,
-            "to": self.end,
-            "days": list(self.days),
-            "allDays": 1 if self.all_days else 0,
-        }
+        params = dict(self.raw)
+        params.update(
+            {
+                "enable": 1 if self.enabled else 0,
+                "from": self.start,
+                "to": self.end,
+                "days": list(self.days),
+                "allDays": 1 if self.all_days else 0,
+            }
+        )
+        return params
 
 
 @dataclass
@@ -122,12 +126,18 @@ class MotionConfig:
 
     def to_params(self) -> Dict[str, Any]:
         """Serialise back into the ``params`` shape accepted by the device."""
-        return {
-            "motion_enable": self.enabled,
-            "type": {"all": self.detect_all, "humanoid": self.detect_human},
-            "sensitivity": self.sensitivity,
-            "effective": self.schedule.to_params(),
-        }
+        params = dict(self.raw)
+        motion_type = dict(_as_dict(self.raw.get("type")))
+        motion_type.update({"all": self.detect_all, "humanoid": self.detect_human})
+        params.update(
+            {
+                "motion_enable": self.enabled,
+                "type": motion_type,
+                "sensitivity": self.sensitivity,
+                "effective": self.schedule.to_params(),
+            }
+        )
+        return params
 
 
 @dataclass
@@ -168,13 +178,19 @@ class AlarmConfig:
 
     def to_params(self) -> Dict[str, Any]:
         """Serialise back into the ``params`` shape accepted by the device."""
-        return {
-            "enableAlarm": 1 if self.enabled else 0,
-            "alarmSetting": {"duration": self.duration, "soundId": self.sound_id},
-            "effective": self.schedule.to_params(),
-            "moveAlarmType": 1 if self.on_motion else 0,
-            "humanoidAlarmType": 1 if self.on_person else 0,
-        }
+        params = dict(self.raw)
+        alarm_setting = dict(_as_dict(self.raw.get("alarmSetting")))
+        alarm_setting.update({"duration": self.duration, "soundId": self.sound_id})
+        params.update(
+            {
+                "enableAlarm": 1 if self.enabled else 0,
+                "alarmSetting": alarm_setting,
+                "effective": self.schedule.to_params(),
+                "moveAlarmType": 1 if self.on_motion else 0,
+                "humanoidAlarmType": 1 if self.on_person else 0,
+            }
+        )
+        return params
 
 
 @dataclass
@@ -208,11 +224,15 @@ class NightVisionConfig:
 
     def to_params(self) -> Dict[str, Any]:
         """Serialise back into the ``params`` shape accepted by the device."""
-        return {
-            "infraredSetting": self.infrared_setting,
-            "nightVision": self.night_vision,
-            "lightStrength": self.light_strength,
-        }
+        params = dict(self.raw)
+        params.update(
+            {
+                "infraredSetting": self.infrared_setting,
+                "nightVision": self.night_vision,
+                "lightStrength": self.light_strength,
+            }
+        )
+        return params
 
 
 @dataclass

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
 from urllib.parse import urljoin
 
 from homeassistant.components import media_source
@@ -58,6 +59,7 @@ class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
     def __init__(self, coordinator: SonoffCamCoordinator) -> None:
         super().__init__(coordinator, "speaker")
         self._session: CameraAudioSession | None = None
+        self._play_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self._attr_state = MediaPlayerState.IDLE
 
@@ -76,11 +78,7 @@ class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         """Set the camera speaker volume."""
         level = max(0, min(100, round(volume * 100)))
-        await self.coordinator.async_write(
-            self.coordinator.client.set_speaker_config(
-                {**self.coordinator.data.speaker, "speakerVolume": level}
-            )
-        )
+        await self.coordinator.async_write(self.coordinator.client.set_speaker_volume(level))
 
     # ----------------------------------------------------------------- browse
     async def async_browse_media(
@@ -102,35 +100,64 @@ class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
         """Play a media source (radio, TTS, URL or file) on the camera speaker."""
         source = await self._resolve_source(media_id)
 
-        async with self._lock:
-            session = CameraAudioSession(self.coordinator.client.raw_call)
-            try:
-                await session.start()
-            except Exception as err:
-                raise HomeAssistantError(
-                    f"Could not open the camera WebRTC audio session: {err}"
-                ) from err
+        # A live radio must not keep the old session (and its lock) alive
+        # forever when a new announcement arrives.
+        await self.async_media_stop()
 
+        session = CameraAudioSession(self.coordinator.client.raw_call)
+        try:
+            await session.start()
+        except Exception as err:
+            await session.close()
+            raise HomeAssistantError(
+                f"Could not open the camera WebRTC audio session: {err}"
+            ) from err
+
+        async with self._lock:
             self._session = session
             self._attr_state = MediaPlayerState.PLAYING
             self.async_write_ha_state()
-            try:
-                await session.stream_source(source)
-            except Exception as err:
-                raise HomeAssistantError(f"Playback failed: {err}") from err
-            finally:
-                self._session = None
-                self._attr_state = MediaPlayerState.IDLE
-                self.async_write_ha_state()
-                await session.close()
+            self._play_task = self.hass.async_create_background_task(
+                self._stream_and_finish(session, source),
+                name=f"sonoff_cam_local speaker {self.entity_id}",
+            )
+
+    async def _stream_and_finish(self, session: CameraAudioSession, source: str) -> None:
+        """Stream ``source`` and reset state when playback ends."""
+        try:
+            await session.stream_source(source)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception("Playback on the camera speaker failed")
+        finally:
+            async with self._lock:
+                if self._session is session:
+                    self._session = None
+                    self._play_task = None
+                    self._attr_state = MediaPlayerState.IDLE
+                    self.async_write_ha_state()
+            await session.close()
 
     async def async_media_stop(self) -> None:
         """Stop playback and tear down the WebRTC session."""
-        session, self._session = self._session, None
+        async with self._lock:
+            task, self._play_task = self._play_task, None
+            session, self._session = self._session, None
+            self._attr_state = MediaPlayerState.IDLE
+            self.async_write_ha_state()
+
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
         if session is not None:
             await session.close()
-        self._attr_state = MediaPlayerState.IDLE
-        self.async_write_ha_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Stop playback when the entity is removed or the entry reloads."""
+        await self.async_media_stop()
+        await super().async_will_remove_from_hass()
 
     # ---------------------------------------------------------------- helpers
     async def _resolve_source(self, media_id: str) -> str:

@@ -11,6 +11,7 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
+    OptionsFlowWithReload,
 )
 from homeassistant.core import callback
 from homeassistant.helpers import selector
@@ -46,6 +47,11 @@ _CONNECT_ERRORS = (ConnectionFailed, Timeout, ProtocolError, OSError)
 
 #: mDNS name fragments that mark a discovered ``_rtsp._tcp`` service as ours.
 _ZEROCONF_TOKENS = ("cam", "sonoff")
+
+
+def _is_camera_info(info: DeviceInfo) -> bool:
+    """Return whether a discovered device really looks like a SONOFF camera."""
+    return info.device_id.startswith("sonoffcam") or "CAM" in info.model.upper()
 
 
 def _scan_network() -> list[str]:
@@ -160,6 +166,8 @@ class SonoffCamConfigFlow(ConfigFlow, domain=DOMAIN):
             if error:
                 errors["base"] = error
             elif info is not None:
+                if not _is_camera_info(info):
+                    return self.async_abort(reason="not_sonoff")
                 return await self._async_create(self._discovered_host, DEFAULT_PORT, None, info)
 
         hosts = await self.hass.async_add_executor_job(_scan_network)
@@ -230,6 +238,8 @@ class SonoffCamConfigFlow(ConfigFlow, domain=DOMAIN):
         info, error = await self._probe(host, DEFAULT_PORT, None)
         if error == "cannot_connect" or info is None:
             return self.async_abort(reason="cannot_connect")
+        if not _is_camera_info(info):
+            return self.async_abort(reason="not_sonoff")
 
         await self.async_set_unique_id(info.device_id)
         self._abort_if_unique_id_configured(updates={CONF_HOST: host})
@@ -247,6 +257,8 @@ class SonoffCamConfigFlow(ConfigFlow, domain=DOMAIN):
         info, error = await self._probe(host, DEFAULT_PORT, None)
         if error == "cannot_connect" or info is None:
             return self.async_abort(reason="cannot_connect")
+        if not _is_camera_info(info):
+            return self.async_abort(reason="not_sonoff")
 
         await self.async_set_unique_id(info.device_id)
         self._abort_if_unique_id_configured(updates={CONF_HOST: host})
@@ -277,7 +289,7 @@ class SonoffCamConfigFlow(ConfigFlow, domain=DOMAIN):
         return SonoffCamOptionsFlow()
 
 
-class SonoffCamOptionsFlow(OptionsFlow):
+class SonoffCamOptionsFlow(OptionsFlowWithReload):
     """Options: polling interval and ONVIF motion events."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

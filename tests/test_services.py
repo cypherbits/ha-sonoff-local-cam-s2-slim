@@ -34,10 +34,12 @@ async def _setup(hass: HomeAssistant) -> MockConfigEntry:
 
 async def test_set_wifi_service(hass: HomeAssistant) -> None:
     """The set_wifi service targets the camera device."""
-    await _setup(hass)
+    entry = await _setup(hass)
     assert hass.services.has_service(DOMAIN, "set_wifi")
 
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, DEVICE_ID)})
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, DEVICE_ID), entry.entry_id
+    )
     assert device is not None
 
     with patch.object(
@@ -56,10 +58,12 @@ async def test_set_wifi_service(hass: HomeAssistant) -> None:
 
 async def test_trigger_alarm_service(hass: HomeAssistant) -> None:
     """The trigger_alarm service sounds the siren with the given duration."""
-    await _setup(hass)
+    entry = await _setup(hass)
     assert hass.services.has_service(DOMAIN, "trigger_alarm")
 
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, DEVICE_ID)})
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, DEVICE_ID), entry.entry_id
+    )
     assert device is not None
 
     with patch.object(

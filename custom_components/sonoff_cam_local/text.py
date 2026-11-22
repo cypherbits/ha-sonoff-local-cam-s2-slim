@@ -20,24 +20,6 @@ PARALLEL_UPDATES = 1
 _SetFn = Callable[[SonoffCamCoordinator, str], Coroutine[Any, Any, Any]]
 
 
-def _system_config(coordinator: SonoffCamCoordinator) -> dict[str, Any]:
-    return dict((coordinator.data.system_config or {}).get("config") or {})
-
-
-def _set_ntp(coordinator: SonoffCamCoordinator, server: str, *, primary: bool) -> Any:
-    config = _system_config(coordinator)
-    sntp = dict(config.get("sntp") or {})
-    sntp["server1" if primary else "server2"] = server
-    config["sntp"] = sntp
-    return coordinator.client.set_system_config(config)
-
-
-def _set_domain(coordinator: SonoffCamCoordinator, domain: str) -> Any:
-    config = _system_config(coordinator)
-    config["domain"] = domain
-    return coordinator.client.set_system_config(config)
-
-
 @dataclass(frozen=True, kw_only=True)
 class SonoffCamTextDescription(TextEntityDescription):
     """Description of a writable text setting."""
@@ -53,7 +35,7 @@ TEXTS: tuple[SonoffCamTextDescription, ...] = (
         value_fn=lambda c: (c.data.system_config.get("config", {}).get("sntp") or {}).get(
             "server1"
         ),
-        set_fn=lambda c, v: _set_ntp(c, v, primary=True),
+        set_fn=lambda c, v: c.client.set_ntp_server(v, primary=True),
         icon="mdi:clock-time-four-outline",
         entity_category=EntityCategory.CONFIG,
         enabled_default=False,
@@ -63,7 +45,7 @@ TEXTS: tuple[SonoffCamTextDescription, ...] = (
         value_fn=lambda c: (c.data.system_config.get("config", {}).get("sntp") or {}).get(
             "server2"
         ),
-        set_fn=lambda c, v: _set_ntp(c, v, primary=False),
+        set_fn=lambda c, v: c.client.set_ntp_server(v, primary=False),
         icon="mdi:clock-time-four-outline",
         entity_category=EntityCategory.CONFIG,
         enabled_default=False,
@@ -71,7 +53,7 @@ TEXTS: tuple[SonoffCamTextDescription, ...] = (
     SonoffCamTextDescription(
         key="local_domain",
         value_fn=lambda c: c.data.system_config.get("config", {}).get("domain"),
-        set_fn=_set_domain,
+        set_fn=lambda c, v: c.client.set_local_domain(v),
         icon="mdi:web",
         entity_category=EntityCategory.CONFIG,
         enabled_default=False,

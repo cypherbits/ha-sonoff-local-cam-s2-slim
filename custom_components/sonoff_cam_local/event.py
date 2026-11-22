@@ -50,7 +50,10 @@ class SonoffCamEvent(SonoffCamEntity, EventEntity):
     @callback
     def _handle_detection(self, event: Event) -> None:
         """Record and publish a detection belonging to this camera."""
-        if event.data.get("device_id") != self._device_id or event.data.get("type") != self._kind:
+        if event.data.get("type") != self._kind:
+            return
+        identifier = event.data.get("native_device_id", event.data.get("device_id"))
+        if identifier != self._device_id:
             return
         self._trigger_event(self._kind)
         self.async_write_ha_state()

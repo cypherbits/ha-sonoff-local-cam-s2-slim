@@ -157,7 +157,7 @@ stream (there is no separate snapshot endpoint on this firmware).
 * **Night vision mode** — Auto / Always on / Always off (`infraredSetting`).
 * **Time zone** — the camera's time zone. *Disabled by default.*
 * **Stream resolution** — `1080P` or `360P`.
-* **Alarm sound** — the siren sound (`arm1`…). *Disabled by default.*
+* **Alarm sound** — the siren sound (`alarm1`…). *Disabled by default.*
 
 ### Numbers
 
@@ -230,10 +230,9 @@ data:
 ```
 
 > **Dependency note**: the WebRTC client uses
-> [`aiortc`](https://github.com/aiortc/aiortc). HA pins `av==19`, while the last
-> aiortc *release* caps `av<18`, so the manifest pins aiortc to a specific
-> `main` commit (which allows `av<20`). This will be switched to a released
-> version once one is available.
+> [`aiortc`](https://github.com/aiortc/aiortc) (`>=1.16`, which allows `av<20`).
+> Home Assistant 2025.12 or newer is required because older releases pin
+> `av==13` and `pyOpenSSL==24`, which are incompatible with aiortc.
 
 ### Alarm / siren
 
@@ -334,7 +333,9 @@ The camera's RPC push notifications are unreliable on stock firmware — this
 integration deliberately uses ONVIF for events. Make sure **ONVIF is enabled**
 on the camera (the `ONVIF` switch) and that the option
 **Enable ONVIF motion/person events** is on. The first subscription can take a
-few seconds.
+few seconds. The camera appears to accept only one ONVIF PullPoint
+subscription at a time, so do not also add the camera to Home Assistant's
+built-in **ONVIF** integration while using this event source.
 
 **No video.**
 The `stream` integration must be able to open the RTSP URL. Confirm the RTSP
@@ -360,7 +361,7 @@ methods for control, while ONVIF PullPoint provides the motion/person events.
 The bundled `sonoff_cam` package implements the digest handshake, the RPC
 client, the typed models and a minimal RTSP/ONVIF helper.
 
-Reference firmware: **2.2.2** (`SN-CAM-S2-01`).
+Reference firmware: **2.2.2 / 2.2.3** (`SN-CAM-S2-01`).
 
 ---
 

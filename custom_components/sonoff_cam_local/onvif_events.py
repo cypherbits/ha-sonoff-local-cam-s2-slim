@@ -10,7 +10,9 @@ the reference project for the full write-up.
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import contextlib
 import hashlib
 import logging
 import os
@@ -18,19 +20,20 @@ import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import aiohttp
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     ONVIF_EVENTS_PATH,
+    ONVIF_MAX_RECONNECT_DELAY,
     ONVIF_PORT_TYPE,
     ONVIF_PULL_MESSAGE_LIMIT,
     ONVIF_PULL_TIMEOUT,
     ONVIF_RECONNECT_DELAY,
     ONVIF_SUBSCRIPTION_LIFETIME,
 )
+from .sonoff_cam.exceptions import ProtocolError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,7 +69,6 @@ class OnvifEventClient:
 
     def __init__(
         self,
-        hass: HomeAssistant,
         host: str,
         username: str,
         password: str,
@@ -79,7 +81,12 @@ class OnvifEventClient:
         self._username = username
         self._password = password
         self._handler = handler
-        self._session = async_get_clientsession(hass)
+        # The camera closes the HTTP connection after each response. A shared
+        # keep-alive session then POSTs on a dead socket, so force a fresh TCP
+        # connection for every ONVIF request.
+        self._session = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(force_close=True)
+        )
 
     # ------------------------------------------------------------------ wssec
     def _security_header(self) -> str:
@@ -118,7 +125,14 @@ class OnvifEventClient:
         async with self._session.post(
             url, data=envelope.encode(), headers=headers, timeout=timeout
         ) as response:
-            return await response.text()
+            text = await response.text()
+            if response.status >= 400:
+                raise ProtocolError(
+                    f"ONVIF {action} returned HTTP {response.status}: {text[:200]}"
+                )
+            if "<Fault" in text or ":Fault>" in text:
+                raise ProtocolError(f"ONVIF {action} returned a SOAP fault: {text[:200]}")
+            return text
 
     async def _subscribe(self) -> str:
         response = await self._call(
@@ -130,8 +144,16 @@ class OnvifEventClient:
         )
         match = _ADDRESS_RE.search(response)
         if not match:
-            raise RuntimeError(f"no subscription address in ONVIF reply: {response[:300]}")
-        return match.group(1).replace(f"http://{self._host}", "")
+            raise ProtocolError(f"no subscription address in ONVIF reply: {response[:300]}")
+        # The device may include a scheme, host and port; only the path is
+        # usable because _call() targets the camera directly.
+        parsed = urlparse(match.group(1))
+        path = parsed.path or ""
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+        if not path:
+            raise ProtocolError(f"invalid ONVIF subscription address: {match.group(1)}")
+        return path
 
     async def _pull(self, path: str) -> list[tuple[str, bool]]:
         response = await self._call(
@@ -142,6 +164,8 @@ class OnvifEventClient:
             "</tev:PullMessages>",
             f"{ONVIF_PORT_TYPE}/PullMessages",
         )
+        if "<Fault" in response or ":Fault>" in response:
+            raise ProtocolError(f"ONVIF PullMessages returned a SOAP fault: {response[:200]}")
         events: list[tuple[str, bool]] = []
         for block in _MSG_RE.findall(response):
             topic_match = _TOPIC_RE.search(block)
@@ -155,24 +179,61 @@ class OnvifEventClient:
                 events.append((kind, state))
         return events
 
+    async def _unsubscribe(self, path: str) -> None:
+        """Best-effort removal of a pull-point subscription."""
+        try:
+            await self._call(path, "<wsnt:Unsubscribe/>", f"{ONVIF_PORT_TYPE}/Unsubscribe")
+        except Exception as err:
+            _LOGGER.debug("ONVIF unsubscribe failed: %s", err)
+
     async def async_run(self) -> None:
         """Run the subscription loop until the task is cancelled."""
-        import asyncio
-
         sub_path: str | None = None
-        while True:
-            try:
-                if sub_path is None:
-                    sub_path = await self._subscribe()
-                    _LOGGER.debug("ONVIF subscription created at %s", sub_path)
-                for kind, state in await self._pull(sub_path):
-                    self._handler(kind, state)
-            except asyncio.CancelledError:
-                raise
-            except Exception as err:
-                _LOGGER.debug("ONVIF event error, reconnecting: %s", err)
-                sub_path = None
-                await asyncio.sleep(ONVIF_RECONNECT_DELAY)
+        delay = ONVIF_RECONNECT_DELAY
+        try:
+            while True:
+                try:
+                    if sub_path is None:
+                        sub_path = await self._subscribe()
+                        _LOGGER.debug("ONVIF subscription created at %s", sub_path)
+                    events = await self._pull(sub_path)
+                    for kind, state in events:
+                        self._handler(kind, state)
+                    delay = ONVIF_RECONNECT_DELAY
+                    if not events:
+                        # Some devices answer PullMessages immediately with an
+                        # empty body. Never busy-loop against the camera.
+                        await asyncio.sleep(1)
+                except asyncio.CancelledError:
+                    raise
+                except ProtocolError as err:
+                    # A SOAP fault / 4xx means the subscription is no longer
+                    # usable. Drop it and create a new one.
+                    _LOGGER.debug("ONVIF subscription error, renewing in %ss: %s", delay, err)
+                    if sub_path is not None:
+                        await self._unsubscribe(sub_path)
+                    sub_path = None
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, ONVIF_MAX_RECONNECT_DELAY)
+                except (aiohttp.ClientError, TimeoutError, OSError) as err:
+                    # Transport errors do not invalidate the subscription. Keep
+                    # it and retry, avoiding a subscription leak.
+                    _LOGGER.debug("ONVIF transport error, retrying in %ss: %s", delay, err)
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, ONVIF_MAX_RECONNECT_DELAY)
+                except Exception as err:
+                    _LOGGER.debug("ONVIF event error, reconnecting in %ss: %s", delay, err)
+                    if sub_path is not None:
+                        await self._unsubscribe(sub_path)
+                    sub_path = None
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, ONVIF_MAX_RECONNECT_DELAY)
+        finally:
+            if sub_path is not None:
+                with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                    await asyncio.wait_for(self._unsubscribe(sub_path), timeout=5)
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._session.close()
 
 
 def _kind_for_topic(topic: str) -> str | None:

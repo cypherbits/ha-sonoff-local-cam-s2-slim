@@ -7,13 +7,15 @@ and no eWeLink account are required.
 
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN  # noqa: F401  (re-exported for convenience)
+from .const import DOMAIN
 from .coordinator import SonoffCamCoordinator
-from .services import async_setup_services
+from .services import async_setup_services, async_unregister_services
+
+__all__ = ["DOMAIN"]
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -41,7 +43,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SonoffCamConfigEntry) ->
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
-    entry.async_on_unload(coordinator.async_shutdown)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -49,4 +50,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: SonoffCamConfigEntry) ->
 
 async def async_unload_entry(hass: HomeAssistant, entry: SonoffCamConfigEntry) -> bool:
     """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded and not any(
+        other.state is ConfigEntryState.LOADED and other.entry_id != entry.entry_id
+        for other in hass.config_entries.async_entries(DOMAIN)
+    ):
+        async_unregister_services(hass)
+    return unloaded

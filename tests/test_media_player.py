@@ -86,6 +86,10 @@ async def test_play_media_opens_webrtc_session(hass: HomeAssistant) -> None:
             },
             blocking=True,
         )
+        entity = hass.data["media_player"].get_entity(ENTITY_ID)
+        assert entity is not None
+        if entity._play_task is not None:
+            await entity._play_task
         await hass.async_block_till_done()
 
     session.start.assert_awaited_once()

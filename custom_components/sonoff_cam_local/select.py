@@ -44,6 +44,14 @@ def _alarm_sound_options(coordinator: SonoffCamCoordinator) -> list[str]:
     return options
 
 
+def _rtsp_resolution_options(coordinator: SonoffCamCoordinator) -> list[str]:
+    options = list(RTSP_RESOLUTIONS)
+    current = coordinator.data.onvif_raw.get("rtspResolution")
+    if current and current not in options:
+        options.append(str(current))
+    return options
+
+
 @dataclass(frozen=True, kw_only=True)
 class SonoffCamSelectDescription(SelectEntityDescription):
     """Description of an enumerated camera setting."""
@@ -74,8 +82,10 @@ SELECTS: tuple[SonoffCamSelectDescription, ...] = (
     ),
     SonoffCamSelectDescription(
         key="rtsp_resolution",
-        value_fn=lambda c: c.data.onvif_raw.get("rtspResolution") or RTSP_RESOLUTIONS[0],
-        options_fn=lambda c: list(RTSP_RESOLUTIONS),
+        value_fn=lambda c: str(
+            c.data.onvif_raw.get("rtspResolution") or RTSP_RESOLUTIONS[0]
+        ),
+        options_fn=_rtsp_resolution_options,
         select_fn=lambda c, v: c.client.set_rtsp_resolution(v),
         icon="mdi:video-high-definition",
         entity_category=EntityCategory.CONFIG,

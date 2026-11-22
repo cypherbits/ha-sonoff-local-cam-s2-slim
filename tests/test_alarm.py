@@ -66,3 +66,22 @@ async def test_test_alarm_sequence() -> None:
     assert restored["enableAlarm"] == 0
     assert restored["moveAlarmType"] == 0
     assert restored["alarmSetting"]["duration"] == 10
+
+
+async def test_test_alarm_toggles_opposite_flip() -> None:
+    """The fake motion always changes the image, even when flip is already on."""
+    camera = SonoffCamera("192.168.1.100", password="secret")
+    stub = _StubRpc()
+    stub._reads[Method.SCREEN_GET_CONFIG] = {
+        "watermarkDisplay": True,
+        "screenFlip": True,
+        "extraScreenField": "keep-me",
+    }
+    camera.rpc = stub  # type: ignore[assignment]
+
+    await camera.test_alarm(1)
+
+    assert camera.rpc.calls[3][1]["screenFlip"] is False
+    assert camera.rpc.calls[3][1]["extraScreenField"] == "keep-me"
+    assert camera.rpc.calls[4][1]["screenFlip"] is True
+    assert camera.rpc.calls[4][1]["extraScreenField"] == "keep-me"

@@ -90,7 +90,11 @@ class RpcClient:
         self._nc = 0
         self._device_id: Optional[str] = None
         self._listeners: List[NotificationHandler] = []
-        self._queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()
+        self._connect_lock = asyncio.Lock()
+        #: Notifications are also exposed through ``notifications()``. Keep the
+        #: buffer bounded so a device that pushes status frames cannot grow
+        #: memory forever when nobody consumes them.
+        self._queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue(maxsize=64)
 
     # ------------------------------------------------------------------ props
     @property
@@ -109,20 +113,31 @@ class RpcClient:
     # -------------------------------------------------------------- lifecycle
     async def connect(self) -> "RpcClient":
         """Open the WebSocket and start the background reader."""
-        if self.connected:
+        async with self._connect_lock:
+            if self.connected:
+                return self
+            # A previous reader may have died while the socket stayed open.
+            old_ws, self._ws = self._ws, None
+            self._challenge = None
+            self._nc = 0
+            self._realm = ""
+            if old_ws is not None:
+                try:
+                    await old_ws.close()
+                except Exception:  # noqa: BLE001 - best effort
+                    pass
+            try:
+                self._ws = await _ws_connect(
+                    self.uri,
+                    open_timeout=self.timeout,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    max_size=None,
+                )
+            except Exception as exc:  # noqa: BLE001 - surfaced as a library error
+                raise ConnectionFailed(f"cannot connect to {self.uri}: {exc}") from exc
+            self._reader_task = asyncio.create_task(self._reader(), name="sonoff-rpc-reader")
             return self
-        try:
-            self._ws = await _ws_connect(
-                self.uri,
-                open_timeout=self.timeout,
-                ping_interval=20,
-                ping_timeout=20,
-                max_size=None,
-            )
-        except Exception as exc:  # noqa: BLE001 - surfaced as a library error
-            raise ConnectionFailed(f"cannot connect to {self.uri}: {exc}") from exc
-        self._reader_task = asyncio.create_task(self._reader(), name="sonoff-rpc-reader")
-        return self
 
     async def close(self) -> None:
         """Close the socket and cancel the reader."""
@@ -139,6 +154,8 @@ class RpcClient:
                 await task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
+        self._challenge = None
+        self._nc = 0
         self._fail_pending(ConnectionFailed("connection closed"))
 
     async def __aenter__(self) -> "RpcClient":
@@ -299,7 +316,11 @@ class RpcClient:
             self._emit_notification(message)
 
     def _emit_notification(self, message: Dict[str, Any]) -> None:
-        self._queue.put_nowait(message)
+        try:
+            self._queue.put_nowait(message)
+        except asyncio.QueueFull:
+            # Nobody is consuming the optional notification iterator.
+            pass
         for handler in list(self._listeners):
             try:
                 result = handler(message)

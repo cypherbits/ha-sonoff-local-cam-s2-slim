@@ -7,9 +7,12 @@ import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -24,8 +27,10 @@ from .const import (
     DEFAULT_RPC_USERNAME,
     DEFAULT_RTSP_USERNAME,
     DEFAULT_SCAN_INTERVAL,
+    DETECTION_TIMEOUT,
     DOMAIN,
     EVENT_DETECTION,
+    ONVIF_PORT,
     RTSP_PORT,
     RTSP_STREAM_PATH,
 )
@@ -55,7 +60,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 #: Errors that mean "the device is unreachable right now" -> retry later.
-_TRANSIENT_ERRORS = (ConnectionFailed, Timeout, ProtocolError, OSError)
+_TRANSIENT_ERRORS = (ConnectionFailed, Timeout, ProtocolError, RpcError, OSError)
 
 
 @dataclass
@@ -110,6 +115,7 @@ class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
 
         self.motion_active = False
         self.person_active = False
+        self._detection_timers: dict[str, CALLBACK_TYPE] = {}
 
         super().__init__(
             hass,
@@ -124,8 +130,17 @@ class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
     # ------------------------------------------------------------------ setup
     async def _async_setup(self) -> None:
         """Connect, read identity and resolve the RTSP credentials once."""
-        await self.client.connect()
-        self.device_info = await self.client.get_device_info(refresh=True)
+        try:
+            await self.client.connect()
+            self.device_info = await self.client.get_device_info(refresh=True)
+        except AuthenticationError as err:
+            raise ConfigEntryAuthFailed(
+                "Authentication with the camera failed; update the password"
+            ) from err
+        except SonoffCamError as err:
+            raise ConfigEntryNotReady(
+                f"Could not reach camera at {self.host}: {err}"
+            ) from err
 
         if not self.rtsp_password:
             try:
@@ -144,19 +159,22 @@ class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
 
         if self.entry.options.get(CONF_ENABLE_ONVIF, True) and self.rtsp_password:
             client = OnvifEventClient(
-                self.hass,
                 self.host,
                 self.rtsp_username,
                 self.rtsp_password,
                 self._handle_onvif_event,
-                port=self.port,
+                port=ONVIF_PORT,
             )
             self.entry.async_create_background_task(
                 self.hass, client.async_run(), name=f"{DOMAIN}-onvif-events"
             )
 
     async def async_shutdown(self) -> None:
-        """Close the RPC connection when the entry is unloaded."""
+        """Close connections and stop pending timers when the entry unloads."""
+        for unsub in self._detection_timers.values():
+            unsub()
+        self._detection_timers.clear()
+        await super().async_shutdown()
         await self.client.close()
 
     # ------------------------------------------------------------------ fetch
@@ -172,7 +190,9 @@ class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
 
     async def _fetch_all(self) -> SonoffCamData:
         data = SonoffCamData()
-        data.status = await self._safe(self.client.get_status())
+        # System.GetStatus is the primary liveness check: let a failure mark
+        # the whole poll as failed instead of silently publishing empty data.
+        data.status = await self.client.get_status()
         data.timezone_info = data.status.get("timezone_info") or {}
         data.motion = await self._safe(self.client.get_motion_config(), MotionConfig())
         data.alarm = await self._safe(self.client.get_alarm_config(), AlarmConfig())
@@ -227,8 +247,19 @@ class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
         for event in (message.get("params") or {}).get("events", []) or []:
             component = str(event.get("component", ""))
             name = str(event.get("event", "")).lower()
-            if component == "Motion" and "mot" in name:
-                self._set_active(EVENT_MOTION, True)
+            if component != "Motion":
+                continue
+            if not any(token in name for token in ("mot", "human", "person")):
+                continue
+            kind = (
+                EVENT_PERSON
+                if any(token in name for token in ("human", "person"))
+                else EVENT_MOTION
+            )
+            state = not any(
+                token in name for token in ("stop", "end", "false", "clear", "no_")
+            )
+            self._set_active(kind, state)
 
     # ------------------------------------------------------------- push ONVIF
     @callback
@@ -243,15 +274,54 @@ class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
         elif kind == EVENT_PERSON and self.person_active != state:
             self.person_active = state
             changed = True
+
+        if state:
+            # Re-arm the safety timer on every "on" event. A lost "off"
+            # event must not leave the binary sensor on forever.
+            self._cancel_detection_timer(kind)
+            self._detection_timers[kind] = async_call_later(
+                self.hass,
+                DETECTION_TIMEOUT,
+                lambda _now: self._detection_expired(kind),
+            )
+        else:
+            self._cancel_detection_timer(kind)
+
         if changed:
             self.async_update_listeners()
         if changed and state and kind in (EVENT_MOTION, EVENT_PERSON):
-            self.hass.bus.async_fire(EVENT_DETECTION, {"device_id": self.device_id, "type": kind})
+            self.hass.bus.async_fire(
+                EVENT_DETECTION,
+                {
+                    "device_id": self.ha_device_id,
+                    "native_device_id": self.device_id,
+                    "type": kind,
+                },
+            )
+
+    def _cancel_detection_timer(self, kind: str) -> None:
+        if unsub := self._detection_timers.pop(kind, None):
+            unsub()
+
+    def _detection_expired(self, kind: str) -> None:
+        self._detection_timers.pop(kind, None)
+        self._set_active(kind, False)
 
     # ------------------------------------------------------------- device info
     @property
     def device_id(self) -> str:
         return self.device_info.device_id if self.device_info else self.host
+
+    @property
+    def ha_device_id(self) -> str:
+        """Return the Home Assistant device-registry id for this camera."""
+        registry = dr.async_get(self.hass)
+        identifier = (DOMAIN, self.device_id)
+        if hasattr(registry, "async_get_devices"):
+            devices = registry.async_get_devices(identifiers={identifier})
+            return devices[0].id if devices else self.device_id
+        device = registry.async_get_device(identifiers={identifier})
+        return device.id if device else self.device_id
 
     @property
     def device_name(self) -> str:
@@ -263,5 +333,6 @@ class SonoffCamCoordinator(DataUpdateCoordinator[SonoffCamData]):
 def _build_rtsp_url(host: str, username: str, password: str) -> str:
     auth = ""
     if username:
-        auth = f"{username}:{password}@" if password else f"{username}@"
+        user = quote(username, safe="")
+        auth = f"{user}:{quote(password, safe='')}@" if password else f"{user}@"
     return f"rtsp://{auth}{host}:{RTSP_PORT}{RTSP_STREAM_PATH}"

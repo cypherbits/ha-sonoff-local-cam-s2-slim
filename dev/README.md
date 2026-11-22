@@ -31,8 +31,9 @@ Wait until the log shows Home Assistant has started, then open
 
 ## Notes
 
-- The integration's Python dependency (`websockets`) is installed into the
-  container automatically on first load; give it a few seconds.
+- The integration's Python dependencies (`websockets` and `aiortc`) are
+  installed into the container automatically on first load; give it a few
+  seconds.
 - Discovery over Docker's default bridge network is limited, so add the camera
   by IP rather than relying on auto-discovery.
 - The Home Assistant configuration (database, `.storage`, etc.) is written to

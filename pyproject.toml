@@ -1,22 +1,23 @@
 [project]
 name = "ha-sonoff-local-cam-s2-slim"
-version = "1.0.0"
+version = "1.2.0"
 description = "Home Assistant custom integration for the SONOFF CAM-S2 / CAM Slim Gen2 camera (stock firmware, fully local)."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 dependencies = ["websockets>=12.0"]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
+    "aiortc>=1.16.0",
+    "pytest>=9.0",
     "pytest-homeassistant-custom-component",
     "ruff>=0.6",
 ]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py314"
 # The bundled sonoff_cam client library is vendored third-party code and keeps
 # its own (documented) style; do not lint or reformat it here.
 extend-exclude = ["custom_components/sonoff_cam_local/sonoff_cam"]

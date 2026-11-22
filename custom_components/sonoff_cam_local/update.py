@@ -1,12 +1,14 @@
 """Update entity reporting OTA firmware availability.
 
-Installing an over-the-air update from Home Assistant has not been verified on
-the stock firmware, so the entity is informational only and disabled by default.
+Installing is destructive and has not been verified on the stock firmware, so
+the entity is disabled by default; it is informational until explicitly enabled.
 """
 
 from __future__ import annotations
 
-from homeassistant.components.update import UpdateEntity
+from typing import Any
+
+from homeassistant.components.update import UpdateEntity, UpdateEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -34,6 +36,7 @@ class SonoffCamFirmwareUpdate(SonoffCamEntity, UpdateEntity):
     _attr_icon = "mdi:package-up"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
+    _attr_supported_features = UpdateEntityFeature.INSTALL
 
     def __init__(self, coordinator: SonoffCamCoordinator) -> None:
         super().__init__(coordinator, "firmware")
@@ -63,7 +66,7 @@ class SonoffCamFirmwareUpdate(SonoffCamEntity, UpdateEntity):
         return status not in ("", "idle", "stop")
 
     async def async_install(
-        self, version: str | None, *, backup: bool = False, **kwargs: object
+        self, version: str | None, backup: bool = False, **kwargs: Any
     ) -> None:
         """Ask the camera to download and install the available firmware update.
 
