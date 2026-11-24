@@ -1,6 +1,6 @@
 [project]
 name = "ha-sonoff-local-cam-s2-slim"
-version = "1.2.0"
+version = "1.2.1"
 description = "Home Assistant custom integration for the SONOFF CAM-S2 / CAM Slim Gen2 camera (stock firmware, fully local)."
 readme = "README.md"
 requires-python = ">=3.14"

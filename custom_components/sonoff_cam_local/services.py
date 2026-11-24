@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.service import async_register_admin_service
 
 from .const import DOMAIN
 
@@ -81,8 +82,8 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         await coordinator.async_write(coordinator.client.test_alarm(call.data["duration"]))
 
     if not hass.services.has_service(DOMAIN, SERVICE_SET_WIFI):
-        hass.services.async_register(
-            DOMAIN, SERVICE_SET_WIFI, _async_set_wifi, schema=SET_WIFI_SCHEMA
+        async_register_admin_service(
+            hass, DOMAIN, SERVICE_SET_WIFI, _async_set_wifi, schema=SET_WIFI_SCHEMA
         )
     if not hass.services.has_service(DOMAIN, SERVICE_TRIGGER_ALARM):
         hass.services.async_register(

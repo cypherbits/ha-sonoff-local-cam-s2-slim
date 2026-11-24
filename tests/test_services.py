@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from homeassistant.core import HomeAssistant
+import pytest
+from homeassistant.core import Context, HomeAssistant
+from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -54,6 +56,35 @@ async def test_set_wifi_service(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     assert mock_set.await_args.args[1:] == ("NewNet", "pw")
+
+
+async def test_set_wifi_service_requires_admin(hass: HomeAssistant) -> None:
+    """A non-admin user cannot change the camera Wi-Fi network."""
+    entry = await _setup(hass)
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, DEVICE_ID), entry.entry_id
+    )
+    assert device is not None
+
+    # Make sure the second user is not the owner (and therefore not an admin).
+    await hass.auth.async_create_user("Owner")
+    user = await hass.auth.async_create_user("Regular user")
+    assert not user.is_admin
+
+    with patch.object(
+        FakeSonoffCamera, "set_wifi_config", return_value={}, autospec=True
+    ) as mock_set:
+        with pytest.raises(Unauthorized):
+            await hass.services.async_call(
+                DOMAIN,
+                "set_wifi",
+                {"device_id": device.id, "ssid": "NewNet", "password": "pw"},
+                blocking=True,
+                context=Context(user_id=user.id),
+            )
+        await hass.async_block_till_done()
+
+    mock_set.assert_not_awaited()
 
 
 async def test_trigger_alarm_service(hass: HomeAssistant) -> None:

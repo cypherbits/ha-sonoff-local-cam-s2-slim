@@ -10,7 +10,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
-from urllib.parse import urljoin
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from homeassistant.components import media_source
 from homeassistant.components.media_player import (
@@ -19,12 +20,12 @@ from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
+    async_process_play_media_url,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.network import get_url
 
 from .coordinator import SonoffCamCoordinator
 from .entity import SonoffCamEntity
@@ -161,23 +162,49 @@ class SonoffCamSpeaker(SonoffCamEntity, MediaPlayerEntity):
 
     # ---------------------------------------------------------------- helpers
     async def _resolve_source(self, media_id: str) -> str:
-        """Resolve a media id to a URL or local path usable by ffmpeg/PyAV."""
+        """Resolve a media id to a playable URL or an allowed local path."""
+        resolved_from_media_source = media_id.startswith("media-source://")
         url = media_id
-        if media_id.startswith("media-source://"):
-            resolved = await media_source.async_resolve_media(self.hass, media_id, self.entity_id)
+
+        if resolved_from_media_source:
+            resolved = await media_source.async_resolve_media(
+                self.hass, media_id, self.entity_id
+            )
+            if resolved.path is not None:
+                path = str(resolved.path)
+                if await self.hass.async_add_executor_job(
+                    self.hass.config.is_allowed_path, path
+                ):
+                    return path
             url = resolved.url
 
-        if url.startswith(("http://", "https://", "rtsp://", "rtmp://")):
-            return url
+        if url.lower().startswith(("http://", "https://", "rtsp://", "rtmp://")):
+            return (
+                async_process_play_media_url(self.hass, url)
+                if resolved_from_media_source
+                else url
+            )
+
+        if resolved_from_media_source and url.startswith("/"):
+            return async_process_play_media_url(self.hass, url)
+
+        path = self._local_path(url)
+        if path is not None and await self.hass.async_add_executor_job(
+            self.hass.config.is_allowed_path, path
+        ):
+            return path
+
+        raise HomeAssistantError(
+            f"Media source {media_id!r} is not allowed; use a media source, an "
+            "HTTP(S)/RTSP/RTMP URL, or a file inside an allowed media directory"
+        )
+
+    def _local_path(self, url: str) -> str | None:
+        """Return the filesystem path for a local media id, if it has one."""
         if url.startswith("file://"):
-            return url[len("file://") :]
+            return url2pathname(urlparse(url).path) or None
         if url.startswith("/local/"):
             return self.hass.config.path("www", url[len("/local/") :])
         if url.startswith("/"):
-            try:
-                base = get_url(self.hass, allow_internal=True, allow_ip=True)
-            except HomeAssistantError:
-                base = None
-            if base is not None:
-                return urljoin(base, url)
-        return url
+            return url
+        return None

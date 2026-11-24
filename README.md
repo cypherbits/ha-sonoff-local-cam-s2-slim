@@ -223,9 +223,10 @@ stream (there is no separate snapshot endpoint on this firmware).
 ### Speaker (`media_player`)
 
 * **Speaker** — plays audio through the camera's built-in speaker. Use
-  `media_player.play_media` (a URL or local file) or `tts.speak`. It is
-  **one-way playback** (announcements, TTS, sounds), not a live intercom — Home
-  Assistant does not capture a microphone for it.
+  `media_player.play_media` (a media source, an HTTP(S)/RTSP/RTMP URL, or a file
+  inside an allowed media directory such as `www` or `media`) or `tts.speak`.
+  It is **one-way playback** (announcements, TTS, sounds), not a live intercom —
+  Home Assistant does not capture a microphone for it.
 
 The stock firmware exposes **no** RPC/RTSP/ONVIF way to send audio (verified:
 `Alarm.*`/`Speaker.Play` answer `-103`, the RTSP server ignores the ONVIF
@@ -306,7 +307,7 @@ automation:
 
 Joins a new Wi-Fi network. **This drops the camera off its current network**; if
 the credentials are wrong the camera becomes unreachable over Wi-Fi and must be
-recovered in AP setup mode.
+recovered in AP setup mode. Only administrators can call this service.
 
 ```yaml
 action: sonoff_cam_local.set_wifi
